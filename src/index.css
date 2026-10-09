@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@theme {
+  --color-zinc-50: #fafafa;
+  --color-zinc-950: #09090b;
+}
+
+body {
+  background-color: var(--color-zinc-950);
+  color: var(--color-zinc-50);
+  overflow: hidden;
+  user-select: none;
+  margin: 0;
+  padding: 0;
+}
