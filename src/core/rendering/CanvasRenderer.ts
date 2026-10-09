@@ -5,6 +5,7 @@ export class CanvasRenderer {
   private ctx: CanvasRenderingContext2D;
   private width: number;
   private height: number;
+  private sparks: {x: number, y: number, color: string}[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -42,15 +43,15 @@ export class CanvasRenderer {
     // Determine screen shake and sparks
     let shakeX = 0;
     let shakeY = 0;
-    let sparks: {x: number, y: number, color: string}[] = [];
+    this.sparks.length = 0; // Reuse array
 
     fighters.forEach(fighter => {
-      if ((fighter.state === 'HIT' || fighter.state === 'KNOCKBACK') && fighter.actionFrame < 5) {
+      if ((fighter.state === 'HIT' || fighter.state === 'KNOCKBACK') && fighter.actionTime < 0.08) {
         shakeX += (Math.random() - 0.5) * 20;
         shakeY += (Math.random() - 0.5) * 20;
         
         // Add spark at roughly chest level
-        sparks.push({
+        this.sparks.push({
           x: fighter.x - (20 * fighter.direction), 
           y: fighter.y - fighter.height * 0.7,
           color: fighter.eyeColor
@@ -69,7 +70,7 @@ export class CanvasRenderer {
     fighters.forEach(fighter => fighter.draw(this.ctx));
 
     // Draw sparks
-    sparks.forEach(spark => {
+    this.sparks.forEach(spark => {
       this.ctx.fillStyle = spark.color;
       this.ctx.shadowColor = spark.color;
       this.ctx.shadowBlur = 15;

@@ -16,6 +16,7 @@ function App() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
+  const [exportFormat, setExportFormat] = useState('16:9 (720p)');
   
   const rendererRef = useRef<CanvasRenderer | null>(null);
   const directorRef = useRef<CombatDirector | null>(null);
@@ -42,7 +43,19 @@ function App() {
     const director = new CombatDirector([f1, f2]);
     directorRef.current = director;
 
+    let lastTime = 0;
+
     const loop = () => {
+      const currentTime = engine.getCurrentTime();
+      let dt = currentTime - lastTime;
+      
+      // If we seek backwards or tab was backgrounded for a VERY long time
+      if (dt < 0) {
+        dt = 0; // Handle seek backwards gracefully
+      }
+      
+      lastTime = currentTime;
+
       engine.getAnalyzerData(frequencyData.current);
       
       // Calculate average intensity for background
@@ -51,11 +64,12 @@ function App() {
       intensity /= 50;
 
       const isBeat = beatDetector.isBeat(frequencyData.current);
-      if (isBeat) {
+      // Real-time beat fallback (only if we don't have offline analysis)
+      if (!engine.trackAnalysis && isBeat) {
         director.onBeat(intensity);
       }
 
-      director.update();
+      director.update(dt, currentTime);
       renderer.render([f1, f2], intensity, frequencyData.current);
 
       requestRef.current = requestAnimationFrame(loop);
@@ -87,6 +101,9 @@ function App() {
       setTrackName("Live System Audio (Spotify)");
       setDuration(0); // Live stream has no duration
       await engine.loadStream(stream);
+      if (directorRef.current) {
+        directorRef.current.setTrackAnalysis(null);
+      }
       setIsPlaying(true);
     } catch (e) {
       console.error("Failed to capture system audio", e);
@@ -100,6 +117,9 @@ function App() {
     setTrackName(file.name);
     await engine.loadAudio(file);
     setDuration(engine.getDuration());
+    if (directorRef.current) {
+       directorRef.current.setTrackAnalysis(engine.trackAnalysis, file.name);
+    }
   };
 
   const togglePlay = () => {
@@ -118,6 +138,26 @@ function App() {
 
   const toggleExport = () => {
     if (!isExporting) {
+      if (!canvasRef.current || !rendererRef.current) return;
+
+      // Set dimension based on format
+      let w = 1280;
+      let h = 720;
+      if (exportFormat === '9:16 (720p)') { w = 720; h = 1280; }
+      else if (exportFormat === '1:1 (720p)') { w = 720; h = 720; }
+      else if (exportFormat === '16:9 (1080p)') { w = 1920; h = 1080; }
+      else if (exportFormat === '9:16 (1080p)') { w = 1080; h = 1920; }
+      
+      canvasRef.current.width = w;
+      canvasRef.current.height = h;
+      rendererRef.current.resize(w, h);
+      
+      // Fighters might need ground level adjustment based on height
+      if (directorRef.current) {
+        // Simple hack to reset y level
+        // (If we had time, we'd add an onResize event to fighters)
+      }
+
       // Start export
       const ctx = engine.getAudioContext();
       if (ctx && exporterRef.current) {
@@ -128,11 +168,24 @@ function App() {
       
       exporterRef.current?.startRecording();
       setIsExporting(true);
-      if (!isPlaying) togglePlay(); // Auto play if starting export
+      
+      // Auto play from beginning if starting export
+      if (!isPlaying) {
+         engine.seek(0);
+         engine.play();
+         setIsPlaying(true);
+      }
     } else {
       // Stop export
       exporterRef.current?.stopRecording();
       setIsExporting(false);
+      
+      // Reset back to standard preview dimensions
+      if (canvasRef.current && rendererRef.current) {
+        canvasRef.current.width = 1280;
+        canvasRef.current.height = 720;
+        rendererRef.current.resize(1280, 720);
+      }
     }
   };
 
@@ -161,6 +214,18 @@ function App() {
             Upload Audio
             <input type="file" accept="audio/mp3, audio/wav" className="hidden" onChange={handleFileUpload} />
           </label>
+          <select 
+            value={exportFormat}
+            onChange={(e) => setExportFormat(e.target.value)}
+            disabled={isExporting}
+            className="bg-zinc-800 text-sm font-semibold rounded-md px-3 py-2 outline-none border border-zinc-700 focus:border-zinc-500 disabled:opacity-50"
+          >
+            <option>16:9 (720p)</option>
+            <option>16:9 (1080p)</option>
+            <option>9:16 (720p)</option>
+            <option>9:16 (1080p)</option>
+            <option>1:1 (720p)</option>
+          </select>
           <button 
             onClick={toggleExport}
             className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors ${

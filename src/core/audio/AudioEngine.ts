@@ -1,3 +1,5 @@
+import { MusicAnalyzer, type TrackAnalysis } from './MusicAnalyzer';
+
 export class AudioEngine {
   private audioContext: AudioContext | null = null;
   private source: AudioBufferSourceNode | null = null;
@@ -9,6 +11,7 @@ export class AudioEngine {
 
   private onTimeUpdate: (time: number) => void;
   private animationFrameId = 0;
+  public trackAnalysis: TrackAnalysis | null = null;
 
   constructor(onTimeUpdate: (time: number) => void) {
     this.onTimeUpdate = onTimeUpdate;
@@ -21,6 +24,9 @@ export class AudioEngine {
     
     const arrayBuffer = await file.arrayBuffer();
     this.buffer = await this.audioContext.decodeAudioData(arrayBuffer);
+    
+    // Analyze offline
+    this.trackAnalysis = await MusicAnalyzer.analyze(this.buffer);
     
     if (this.analyzer) this.analyzer.disconnect();
     this.analyzer = this.audioContext.createAnalyser();
