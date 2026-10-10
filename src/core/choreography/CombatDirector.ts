@@ -42,8 +42,11 @@ export class CombatDirector {
   private trackAnalysis: TrackAnalysis | null = null;
   private currentBeatIndex = 0;
   
-  constructor(fighters: Fighter[]) {
+  public onHit: (x: number, y: number, color: string, damage: number) => void;
+  
+  constructor(fighters: Fighter[], onHit: (x: number, y: number, color: string, damage: number) => void) {
     this.fighters = fighters;
+    this.onHit = onHit;
   }
 
   public setTrackAnalysis(analysis: TrackAnalysis | null, seedString: string = "beatfighter") {
@@ -187,18 +190,22 @@ export class CombatDirector {
        const hitbox = attacker.getHitbox();
        const bodybox = defender.getBodyBox();
        
+       if (!hitbox) return;
+       
        if (rectIntersect(hitbox, bodybox)) {
           // Resolve hit
           attacker.isHitActive = false; // Cannot hit multiple times with same active phase
           
           if (defender.state === 'BLOCK') {
             // Blocked
-            defender.actionTime = 0; // extend block visual slightly
+            defender.actionTime = 0;
+            this.onHit(hitbox.x, hitbox.y, '#ffffff', 0.5); // Small block spark
           } else if (defender.state === 'DODGE' || defender.state === 'BACKFLIP') {
             // Missed
           } else {
             // Landed
             const dmg = attacker.currentMove.damage;
+            this.onHit(hitbox.x, hitbox.y, defender.eyeColor, dmg / 10);
             if (dmg > 20) {
               defender.performMove('KNOCKBACK');
             } else {

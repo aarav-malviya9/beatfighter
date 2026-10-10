@@ -37,10 +37,15 @@ function App() {
     exporterRef.current = exporter;
 
     // Init fighters
-    const f1 = new Fighter(canvasRef.current.width * 0.3, canvasRef.current.height - 100, 1, '#222', '#ff003c');
-    const f2 = new Fighter(canvasRef.current.width * 0.7, canvasRef.current.height - 100, -1, '#222', '#00ffcc');
+    const f1 = new Fighter(canvasRef.current.width * 0.3, canvasRef.current.height - 100, 1, '#111', '#ff003c');
+    const f2 = new Fighter(canvasRef.current.width * 0.7, canvasRef.current.height - 100, -1, '#111', '#00ffcc');
     
-    const director = new CombatDirector([f1, f2]);
+    const director = new CombatDirector([f1, f2], (x, y, color, dmg) => {
+      if (rendererRef.current) {
+        rendererRef.current.vfx.emitHit(x, y, color, dmg);
+        rendererRef.current.camera.addShake(dmg * 2);
+      }
+    });
     directorRef.current = director;
 
     let lastTime = 0;
@@ -70,6 +75,7 @@ function App() {
       }
 
       director.update(dt, currentTime);
+      renderer.update(dt, [f1, f2], intensity);
       renderer.render([f1, f2], intensity, frequencyData.current);
 
       requestRef.current = requestAnimationFrame(loop);

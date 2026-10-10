@@ -17,6 +17,10 @@ export class Fighter {
   public currentMove: MoveDefinition | null = null;
   public isHitActive: boolean = false;
   public currentPhase: MovePhase | null = null;
+  
+  // Cinematic trails
+  private handTrail: Point[] = [];
+  private footTrail: Point[] = [];
 
   constructor(x: number, y: number, direction: 1 | -1, color: string, eyeColor: string) {
     this.x = x;
@@ -196,8 +200,54 @@ export class Fighter {
       }
     }
 
+    // Update trails
+    this.handTrail.unshift({ x: rightHand.x * this.direction + this.x, y: rightHand.y + this.y });
+    this.footTrail.unshift({ x: rightFoot.x * this.direction + this.x, y: rightFoot.y + this.y });
+    if (this.handTrail.length > 10) this.handTrail.pop();
+    if (this.footTrail.length > 10) this.footTrail.pop();
+
+    ctx.save();
+    
+    // Draw Trails if attacking
+    if (this.currentMove && (this.currentPhase === 'ACTIVE' || this.currentPhase === 'STARTUP')) {
+      const drawTrail = (trail: Point[]) => {
+        if (trail.length < 2) return;
+        ctx.beginPath();
+        ctx.moveTo(trail[0].x, trail[0].y);
+        for (let i = 1; i < trail.length; i++) {
+          ctx.lineTo(trail[i].x, trail[i].y);
+        }
+        ctx.strokeStyle = this.eyeColor;
+        ctx.lineWidth = 15;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        // Fade out trail
+        const gradient = ctx.createLinearGradient(trail[0].x, trail[0].y, trail[trail.length-1].x, trail[trail.length-1].y);
+        gradient.addColorStop(0, this.eyeColor);
+        gradient.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.strokeStyle = gradient;
+        ctx.stroke();
+      };
+      
+      const isKick = this.state.includes('KICK') || this.state === 'ROUNDHOUSE';
+      drawTrail(isKick ? this.footTrail : this.handTrail);
+    }
+
+    ctx.translate(this.x, this.y);
+    ctx.scale(this.direction, 1);
+
+    // Aura
+    if (this.currentMove) {
+      ctx.fillStyle = this.eyeColor;
+      ctx.globalAlpha = 0.15;
+      ctx.beginPath();
+      ctx.arc(0, -this.height * 0.5, this.height * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+    }
+
     ctx.strokeStyle = this.color;
-    ctx.lineWidth = 8;
+    ctx.lineWidth = 12; // Thicker cinematic limbs
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
@@ -226,30 +276,31 @@ export class Fighter {
     // Head
     ctx.fillStyle = this.color;
     ctx.beginPath();
-    ctx.arc(headX, headY, 15, 0, Math.PI * 2);
+    ctx.arc(headX, headY, 18, 0, Math.PI * 2);
     ctx.fill();
 
-    // Eyes
+    // Glowing Eyes
     ctx.fillStyle = this.eyeColor;
-    ctx.beginPath();
-    ctx.arc(headX + 5, headY - 3, 3, 0, Math.PI * 2); 
-    ctx.arc(headX + 12, headY - 3, 3, 0, Math.PI * 2);
-    ctx.fill();
-    
     ctx.shadowColor = this.eyeColor;
-    ctx.shadowBlur = 10;
+    ctx.shadowBlur = 15;
+    ctx.beginPath();
+    
+    // Angry eyes if attacking
+    if (this.currentMove) {
+      ctx.moveTo(headX + 2, headY - 5);
+      ctx.lineTo(headX + 8, headY - 2);
+      ctx.lineTo(headX + 2, headY);
+      
+      ctx.moveTo(headX + 10, headY - 5);
+      ctx.lineTo(headX + 16, headY - 2);
+      ctx.lineTo(headX + 10, headY);
+    } else {
+      ctx.arc(headX + 5, headY - 3, 3, 0, Math.PI * 2); 
+      ctx.arc(headX + 12, headY - 3, 3, 0, Math.PI * 2);
+    }
+    
     ctx.fill();
     ctx.shadowBlur = 0;
-
-    // Optional: Draw Hitbox (for debugging, could wrap in a debug flag later)
-    /*
-    if (this.currentPhase === 'ACTIVE' && this.currentMove?.hitbox) {
-      ctx.strokeStyle = 'red';
-      ctx.lineWidth = 2;
-      const h = this.currentMove.hitbox;
-      ctx.strokeRect(h.offsetX, h.offsetY, h.width, h.height);
-    }
-    */
 
     ctx.restore();
   }
