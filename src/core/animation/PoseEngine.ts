@@ -209,7 +209,7 @@ export function mirrorPose(pose: Pose): Pose {
   return {
     joints,
     root: { x: pose.root.x, y: pose.root.y },
-    direction: -pose.direction,
+    direction: (-pose.direction) as 1 | -1,
     time: pose.time,
   };
 }

@@ -45,7 +45,7 @@ function App() {
         rendererRef.current.vfx.emitHit(x, y, color, dmg);
         rendererRef.current.camera.addShake(dmg * 2);
       }
-    });
+    }, renderer.camera);
     directorRef.current = director;
 
     let lastTime = 0;
