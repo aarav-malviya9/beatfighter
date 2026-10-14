@@ -9,6 +9,8 @@ import {
 } from '../animation/MoveLibrary';
 import { type TrackAnalysis } from '../audio/MusicAnalyzer';
 import { CameraDirector } from '../rendering/CameraDirector';
+import { SoundFX } from '../audio/SoundFX';
+import type { CanvasRenderer } from '../rendering/CanvasRenderer';
 
 export {
   MOVES,
@@ -105,6 +107,8 @@ export class CombatDirector {
   // External delegates
   public onHit: (x: number, y: number, color: string, damage: number) => void;
   public camera: CameraDirector | null = null;
+  public renderer: CanvasRenderer | null = null;
+  public isPlayerControlled: boolean = false;
 
   // Cinematic Choreography State
   private combatState: CombatState = 'NEUTRAL';
@@ -133,11 +137,17 @@ export class CombatDirector {
   constructor(
     fighters: Fighter[],
     onHit: (x: number, y: number, color: string, damage: number) => void,
-    camera?: CameraDirector | null
+    camera?: CameraDirector | null,
+    renderer?: CanvasRenderer | null
   ) {
     this.fighters = fighters;
     this.onHit = onHit;
     this.camera = camera ?? null;
+    this.renderer = renderer ?? null;
+  }
+
+  public setRenderer(renderer: CanvasRenderer | null): void {
+    this.renderer = renderer;
   }
 
   public setCamera(camera: CameraDirector | null): void {
@@ -846,8 +856,29 @@ export class CombatDirector {
       const dmg = currentMove.damage;
       const vfxIntensity = Math.min(1.0, Math.max(0.2, dmg / 45));
 
+      // Sound FX
+      SoundFX.getInstance().playHit(dmg >= 24);
+      SoundFX.getInstance().playBladeSlash();
+
       // Emit Hit VFX
       this.onHit(hitX, hitY, defender.eyeColor, vfxIntensity);
+
+      // Dimensional Cut / Finisher sequence
+      if (currentMove.finisher || dmg >= 35) {
+        SoundFX.getInstance().playDimensionalSlash();
+        if (this.renderer) {
+          this.renderer.triggerDimensionalSlash(hitX, hitY, attacker.eyeColor);
+          this.renderer.addCombatCallout(hitX, hitY - 45, 'DIMENSIONAL CUT!', attacker.eyeColor, true);
+        }
+      } else if (dmg >= 20) {
+        if (this.renderer) {
+          this.renderer.addCombatCallout(hitX, hitY - 30, 'CRITICAL HIT!', '#ffffff', true);
+        }
+      } else {
+        if (this.renderer) {
+          this.renderer.addCombatCallout(hitX, hitY - 20, 'SHADOW STRIKE', attacker.eyeColor, false);
+        }
+      }
 
       // Camera impacts
       if (this.camera) {
@@ -873,6 +904,14 @@ export class CombatDirector {
     hitX: number,
     hitY: number
   ): void {
+    // Metallic sword clash ring
+    SoundFX.getInstance().playBladeClash(1.35);
+
+    if (this.renderer) {
+      this.renderer.triggerSwordClash(hitX, hitY);
+      this.renderer.addCombatCallout(hitX, hitY - 35, 'PERFECT PARRY!', '#ffd700', true);
+    }
+
     // White-gold parry spark
     this.onHit(hitX, hitY, '#ffe066', 0.85);
 
@@ -903,11 +942,55 @@ export class CombatDirector {
   // Movement & Distance Management
   // ---------------------------------------------------------------------------
 
+  public handlePlayerInput(
+    action: 'left' | 'right' | 'light' | 'heavy' | 'special' | 'dodge' | 'jump' | 'duck' | 'throw',
+  ): void {
+    const p1 = this.fighters[0];
+    const p2 = this.fighters[1];
+    if (!p1 || !p2) return;
+
+    switch (action) {
+      case 'left':
+        p1.direction = -1;
+        p1.x = Math.max(120, p1.x - 24);
+        p1.performMove('dash');
+        break;
+      case 'right':
+        p1.direction = 1;
+        p1.x = Math.min(1160, p1.x + 24);
+        p1.performMove('dash');
+        break;
+      case 'light':
+        this.executeFighterMove(p1, this.prng.choice(['jab', 'cross', 'hook']));
+        break;
+      case 'heavy':
+        this.executeFighterMove(p1, this.prng.choice(['roundhouse', 'axe_kick', 'uppercut', 'spinning_kick']));
+        break;
+      case 'special':
+        this.executeFighterMove(p1, this.prng.choice(['finisher_strike', 'cinematic_counter', 'energy_strike']));
+        break;
+      case 'dodge':
+        this.executeFighterMove(p1, this.prng.choice(['parry', 'roll', 'sidestep']));
+        break;
+      case 'jump':
+        this.executeFighterMove(p1, 'aerial_launch');
+        break;
+      case 'duck':
+        this.executeFighterMove(p1, 'duck');
+        break;
+      case 'throw':
+        p1.throwKunai(p2.x, p2.y - 70);
+        SoundFX.getInstance().playProjectileThrow();
+        break;
+    }
+  }
+
   private executeFighterMove(fighter: Fighter, moveId: string): void {
     const move = getMove(moveId);
     if (!move) return;
 
     fighter.performMove(moveId);
+    SoundFX.getInstance().playWhoosh(move.level === 'HEAVY' || !!move.finisher ? 1.4 : 1.0);
 
     // Trigger Move Camera requests if specified
     if (move.camera && this.camera) {

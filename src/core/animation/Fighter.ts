@@ -144,6 +144,27 @@ interface ImpactEffect {
   lines: ImpactLine[];
 }
 
+export type WeaponType = 'katana' | 'dual_blades' | 'scythe' | 'fists';
+export type HeadgearType = 'straw_hat' | 'ninja_headband' | 'demon_mask' | 'none';
+
+export interface Projectile {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  angle: number;
+  life: number;
+  active: boolean;
+  color: string;
+}
+
+interface ClothNode {
+  x: number;
+  y: number;
+  oldX: number;
+  oldY: number;
+}
+
 export class Fighter {
   public x: number;
   public y: number;
@@ -162,6 +183,15 @@ export class Fighter {
 
   public health: number = 100;
   public style: FighterStyle = 'shadow';
+
+  // Ninja Weapons & Gear ($10,000 Reference)
+  public weapon: WeaponType = 'katana';
+  public headgear: HeadgearType = 'straw_hat';
+  public projectiles: Projectile[] = [];
+
+  // Flowing cloth physics ribbons (Headband & Waist Sash)
+  private headbandRibbon: ClothNode[] = [];
+  private sashRibbon: ClothNode[] = [];
 
   private groundY: number;
   private auraIntensity: number = 0.35;
@@ -217,6 +247,26 @@ export class Fighter {
       this.skeleton,
       this.direction,
     );
+
+    // Initialize 4-node cloth ribbon for ninja headband
+    for (let i = 0; i < 4; i++) {
+      this.headbandRibbon.push({
+        x: x - i * 12 * direction,
+        y: y - this.height * 0.85,
+        oldX: x - i * 12 * direction,
+        oldY: y - this.height * 0.85,
+      });
+    }
+
+    // Initialize 3-node cloth ribbon for waist sash
+    for (let i = 0; i < 3; i++) {
+      this.sashRibbon.push({
+        x: x - i * 10 * direction,
+        y: y - this.height * 0.45,
+        oldX: x - i * 10 * direction,
+        oldY: y - this.height * 0.45,
+      });
+    }
   }
 
   public performMove(moveIdOrState: string): void {
@@ -359,6 +409,8 @@ export class Fighter {
     this.decayAfterimages(dt);
     this.solveAndTrail(dt);
     this.updateParticlesAndEffects(dt);
+    this.updateClothPhysics(dt);
+    this.updateProjectiles(dt);
   }
 
   public getHitbox(): {
@@ -443,14 +495,20 @@ export class Fighter {
     this.drawAura(ctx);
     this.drawStyleAuraParticles(ctx);
 
-    // 6) Main shadow stickman body with inner glow & glowing striking limb
+    // 6) Main shadow stickman body with weapons & headgear
     this.drawSkeletonAt(ctx, this.currentPose, this.x, this.y, 1, false);
 
-    // 7) Eye trail ribbons
+    // 7) Flowing cloth ribbons (Headband & Waist Sash)
+    this.drawClothRibbons(ctx);
+
+    // 8) Eye trail ribbons
     this.drawEyeTrails(ctx);
 
-    // 8) Impact freeze frame speed lines & burst
+    // 9) Impact freeze frame speed lines & burst
     this.drawImpactEffect(ctx);
+
+    // 10) Flying ninja projectiles (Kunai / Shuriken)
+    this.drawProjectiles(ctx);
   }
 
   public setGroundY(y: number): void {
@@ -581,32 +639,47 @@ export class Fighter {
         const tipWorldX = this.x + tipPos.x * this.direction;
         const tipWorldY = this.y + tipPos.y;
 
+        let bladeTipX = tipWorldX;
+        let bladeTipY = tipWorldY;
+        let bladeBaseX = tipWorldX;
+        let bladeBaseY = tipWorldY;
+
+        if (this.weapon !== 'fists' && (trailJoint === 'hand_r' || trailJoint === 'hand_l')) {
+          const armName = trailJoint === 'hand_r' ? 'lowerArm_r' : 'lowerArm_l';
+          const armPos = getJointWorldPos(this.solvedPose, armName);
+          if (armPos) {
+            const ax = this.x + armPos.x * this.direction;
+            const ay = this.y + armPos.y;
+            const dx = tipWorldX - ax;
+            const dy = tipWorldY - ay;
+            const len = Math.hypot(dx, dy) || 1;
+            const bladeLen = this.weapon === 'scythe' ? 95 : this.weapon === 'katana' ? 75 : 55;
+            bladeTipX = tipWorldX + (dx / len) * bladeLen;
+            bladeTipY = tipWorldY + (dy / len) * bladeLen;
+            bladeBaseX = tipWorldX;
+            bladeBaseY = tipWorldY;
+          }
+        } else {
+          const baseName = this.getBaseJointName(trailJoint);
+          const basePos = baseName ? getJointWorldPos(this.solvedPose, baseName) : null;
+          bladeBaseX = basePos ? this.x + basePos.x * this.direction : tipWorldX - 16 * this.direction;
+          bladeBaseY = basePos ? this.y + basePos.y : tipWorldY + 12;
+        }
+
         this.motionTrail.push({
-          x: tipWorldX,
-          y: tipWorldY,
+          x: bladeTipX,
+          y: bladeTipY,
           life: 1,
         });
         if (this.motionTrail.length > 16) this.motionTrail.shift();
 
         // If in ACTIVE attack phase, record weapon slash arc ribbon
         if (this.currentPhase === 'ACTIVE') {
-          // Base joint of the striking limb
-          const baseJointName = this.getBaseJointName(trailJoint);
-          const basePos = baseJointName
-            ? getJointWorldPos(this.solvedPose, baseJointName)
-            : null;
-          const baseWorldX = basePos
-            ? this.x + basePos.x * this.direction
-            : tipWorldX - 16 * this.direction;
-          const baseWorldY = basePos
-            ? this.y + basePos.y
-            : tipWorldY + 12;
-
           this.slashTrail.push({
-            tipX: tipWorldX,
-            tipY: tipWorldY,
-            baseX: baseWorldX,
-            baseY: baseWorldY,
+            tipX: bladeTipX,
+            tipY: bladeTipY,
+            baseX: bladeBaseX,
+            baseY: bladeBaseY,
             life: 1,
             maxLife: 1,
           });
@@ -828,12 +901,22 @@ export class Fighter {
       const p1 = this.slashTrail[i];
       const alpha = Math.min(p0.life, p1.life);
 
-      // Multi-layer glowing blade energy ribbon
+      // 1. Bold Sumi-e Calligraphy Ink Brush Stroke (Deep Dark Japanese Anime Aesthetic)
+      ctx.fillStyle = hexAlpha('#040408', alpha * 0.88);
+      ctx.beginPath();
+      ctx.moveTo(p0.tipX, p0.tipY);
+      ctx.lineTo(p1.tipX, p1.tipY);
+      ctx.lineTo(p1.baseX, p1.baseY);
+      ctx.lineTo(p0.baseX, p0.baseY);
+      ctx.closePath();
+      ctx.fill();
+
+      // 2. Multi-layer glowing blade energy ribbon
       const grad = ctx.createLinearGradient(p1.baseX, p1.baseY, p1.tipX, p1.tipY);
       grad.addColorStop(0, hexAlpha(this.eyeColor, 0));
-      grad.addColorStop(0.4, hexAlpha(this.eyeColor, alpha * 0.55));
-      grad.addColorStop(0.85, hexAlpha('#ffffff', alpha * 0.95));
-      grad.addColorStop(1, hexAlpha(this.eyeColor, alpha * 0.85));
+      grad.addColorStop(0.35, hexAlpha(this.eyeColor, alpha * 0.65));
+      grad.addColorStop(0.82, hexAlpha('#ffffff', alpha * 0.95));
+      grad.addColorStop(1, hexAlpha(this.eyeColor, alpha * 0.88));
 
       ctx.fillStyle = grad;
       ctx.beginPath();
@@ -844,11 +927,11 @@ export class Fighter {
       ctx.closePath();
       ctx.fill();
 
-      // Sharp outer cutting edge
-      ctx.strokeStyle = hexAlpha('#ffffff', alpha * 0.9);
-      ctx.lineWidth = 3.5 * alpha;
+      // 3. Razor sharp outer cutting edge
+      ctx.strokeStyle = hexAlpha('#ffffff', alpha * 0.95);
+      ctx.lineWidth = 4 * alpha;
       ctx.shadowColor = this.eyeColor;
-      ctx.shadowBlur = 12;
+      ctx.shadowBlur = 18;
       ctx.beginPath();
       ctx.moveTo(p0.tipX, p0.tipY);
       ctx.lineTo(p1.tipX, p1.tipY);
@@ -1258,6 +1341,14 @@ export class Fighter {
       }
     }
 
+    // Headgear (Straw Hat, Demon Mask, Headband)
+    if (head) {
+      this.drawHeadgear(ctx, head, ghost);
+    }
+
+    // Weapons held in hands (Katana, Dual Blades, Scythe)
+    this.drawWeapons(ctx, jp, isAttacking, ghost);
+
     ctx.restore();
   }
 
@@ -1374,6 +1465,494 @@ export class Fighter {
       ctx.stroke();
     }
 
+    ctx.restore();
+  }
+
+  // ---------------------------------------------------------------------------
+  // NINJA CLOTH PHYSICS & WEAPON SYSTEMS ($10,000 Ref: Straw Hat, Katanas, Scythe)
+  // ---------------------------------------------------------------------------
+
+  private updateClothPhysics(dt: number): void {
+    const headWorld = this.getJointWorld('head');
+    if (headWorld && this.headbandRibbon.length > 0) {
+      this.headbandRibbon[0].x = headWorld.x - 8 * this.direction;
+      this.headbandRibbon[0].y = headWorld.y - 2;
+
+      for (let i = 1; i < this.headbandRibbon.length; i++) {
+        const node = this.headbandRibbon[i];
+        const vx = (node.x - node.oldX) * 0.88;
+        const vy = (node.y - node.oldY) * 0.88 + 340 * dt;
+        node.oldX = node.x;
+        node.oldY = node.y;
+
+        const wind = Math.sin(this.breathTime * 8 + i * 1.5) * 22 - this.direction * 35;
+        node.x += vx + wind * dt;
+        node.y += vy;
+
+        const prev = this.headbandRibbon[i - 1];
+        const dx = node.x - prev.x;
+        const dy = node.y - prev.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        const maxDist = 13;
+        if (dist > maxDist) {
+          node.x = prev.x + (dx / dist) * maxDist;
+          node.y = prev.y + (dy / dist) * maxDist;
+        }
+      }
+    }
+
+    const hipsWorld = this.getJointWorld('hips');
+    if (hipsWorld && this.sashRibbon.length > 0) {
+      this.sashRibbon[0].x = hipsWorld.x - 6 * this.direction;
+      this.sashRibbon[0].y = hipsWorld.y;
+
+      for (let i = 1; i < this.sashRibbon.length; i++) {
+        const node = this.sashRibbon[i];
+        const vx = (node.x - node.oldX) * 0.85;
+        const vy = (node.y - node.oldY) * 0.85 + 380 * dt;
+        node.oldX = node.x;
+        node.oldY = node.y;
+
+        const wind = Math.sin(this.breathTime * 6 + i) * 18 - this.direction * 22;
+        node.x += vx + wind * dt;
+        node.y += vy;
+
+        const prev = this.sashRibbon[i - 1];
+        const dx = node.x - prev.x;
+        const dy = node.y - prev.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        const maxDist = 12;
+        if (dist > maxDist) {
+          node.x = prev.x + (dx / dist) * maxDist;
+          node.y = prev.y + (dy / dist) * maxDist;
+        }
+      }
+    }
+  }
+
+  private updateProjectiles(dt: number): void {
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.life -= dt;
+      if (p.life <= 0) {
+        this.projectiles.splice(i, 1);
+      }
+    }
+  }
+
+  public throwKunai(targetX: number, targetY: number): void {
+    const handWorld = this.getJointWorld('hand_r') ?? { x: this.x + 20 * this.direction, y: this.y - 80 };
+    const dx = targetX - handWorld.x;
+    const dy = targetY - handWorld.y;
+    const angle = Math.atan2(dy, dx);
+    const speed = 750;
+
+    this.projectiles.push({
+      x: handWorld.x,
+      y: handWorld.y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      angle,
+      life: 1.2,
+      active: true,
+      color: this.eyeColor,
+    });
+  }
+
+  private drawClothRibbons(ctx: CanvasRenderingContext2D): void {
+    // 1. Headband ribbons
+    if (this.headbandRibbon.length >= 2 && this.headgear !== 'none') {
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      // Outer glow
+      ctx.strokeStyle = hexAlpha(this.eyeColor, 0.45);
+      ctx.lineWidth = 6;
+      ctx.shadowColor = this.eyeColor;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.moveTo(this.headbandRibbon[0].x, this.headbandRibbon[0].y);
+      for (let i = 1; i < this.headbandRibbon.length; i++) {
+        ctx.lineTo(this.headbandRibbon[i].x, this.headbandRibbon[i].y);
+      }
+      ctx.stroke();
+
+      // Dark ninja cloth core
+      ctx.strokeStyle = this.color;
+      ctx.lineWidth = 4;
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.moveTo(this.headbandRibbon[0].x, this.headbandRibbon[0].y);
+      for (let i = 1; i < this.headbandRibbon.length; i++) {
+        ctx.lineTo(this.headbandRibbon[i].x, this.headbandRibbon[i].y);
+      }
+      ctx.stroke();
+
+      // Whipping glowing ribbon tip
+      const last = this.headbandRibbon[this.headbandRibbon.length - 1];
+      ctx.fillStyle = hexAlpha(this.eyeColor, 0.9);
+      ctx.shadowColor = this.eyeColor;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(last.x, last.y, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    // 2. Waist sash ribbons
+    if (this.sashRibbon.length >= 2) {
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      ctx.strokeStyle = hexAlpha(this.eyeColor, 0.35);
+      ctx.lineWidth = 4.5;
+      ctx.shadowColor = this.eyeColor;
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.moveTo(this.sashRibbon[0].x, this.sashRibbon[0].y);
+      for (let i = 1; i < this.sashRibbon.length; i++) {
+        ctx.lineTo(this.sashRibbon[i].x, this.sashRibbon[i].y);
+      }
+      ctx.stroke();
+
+      ctx.strokeStyle = this.color;
+      ctx.lineWidth = 3;
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.moveTo(this.sashRibbon[0].x, this.sashRibbon[0].y);
+      for (let i = 1; i < this.sashRibbon.length; i++) {
+        ctx.lineTo(this.sashRibbon[i].x, this.sashRibbon[i].y);
+      }
+      ctx.stroke();
+
+      ctx.restore();
+    }
+  }
+
+  private drawHeadgear(
+    ctx: CanvasRenderingContext2D,
+    head: Point,
+    ghost: boolean,
+  ): void {
+    if (ghost) return;
+
+    if (this.headgear === 'straw_hat') {
+      // Classic Conical Straw Ronin Hat (Kasa)
+      ctx.save();
+      ctx.translate(head.x, head.y - 12);
+
+      // Hat angle follows head tilt
+      const headAngle = 0.08 * this.direction;
+      ctx.rotate(headAngle);
+
+      const hatWidth = 62;
+      const hatHeight = 22;
+
+      // Drop shadow over face
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+      ctx.beginPath();
+      ctx.ellipse(0, 10, 22, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Straw cone gradient
+      const hatGrad = ctx.createLinearGradient(0, -hatHeight, 0, 4);
+      hatGrad.addColorStop(0, '#1c1510');
+      hatGrad.addColorStop(0.4, '#382b20');
+      hatGrad.addColorStop(0.7, '#241a14');
+      hatGrad.addColorStop(1, '#0e0a08');
+
+      ctx.fillStyle = hatGrad;
+      ctx.strokeStyle = hexAlpha(this.eyeColor, 0.5);
+      ctx.lineWidth = 1.6;
+      ctx.shadowColor = this.eyeColor;
+      ctx.shadowBlur = 6;
+
+      ctx.beginPath();
+      ctx.moveTo(0, -hatHeight);
+      ctx.lineTo(hatWidth * 0.5, 4);
+      ctx.lineTo(-hatWidth * 0.5, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Bamboo weave line accents
+      ctx.strokeStyle = 'rgba(120, 95, 65, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.shadowBlur = 0;
+      for (let i = -2; i <= 2; i++) {
+        ctx.beginPath();
+        ctx.moveTo(0, -hatHeight);
+        ctx.lineTo(i * 12, 4);
+        ctx.stroke();
+      }
+
+      // Red Ronin knot cord
+      ctx.strokeStyle = '#c02030';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(-10, 4);
+      ctx.lineTo(0, 16);
+      ctx.lineTo(10, 4);
+      ctx.stroke();
+
+      ctx.restore();
+    } else if (this.headgear === 'demon_mask') {
+      // Curved Oni Horns & Warped Silhouette
+      ctx.save();
+      ctx.translate(head.x, head.y);
+      ctx.shadowColor = this.eyeColor;
+      ctx.shadowBlur = 14;
+
+      // Left Horn
+      ctx.fillStyle = this.color;
+      ctx.strokeStyle = this.eyeColor;
+      ctx.lineWidth = 1.5;
+
+      ctx.beginPath();
+      ctx.moveTo(-7 * this.direction, -14);
+      ctx.quadraticCurveTo(-18 * this.direction, -24, -22 * this.direction, -36);
+      ctx.quadraticCurveTo(-14 * this.direction, -22, -2 * this.direction, -16);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Right Horn
+      ctx.beginPath();
+      ctx.moveTo(3 * this.direction, -14);
+      ctx.quadraticCurveTo(12 * this.direction, -26, 18 * this.direction, -38);
+      ctx.quadraticCurveTo(8 * this.direction, -22, 7 * this.direction, -15);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.restore();
+    } else if (this.headgear === 'ninja_headband') {
+      // Shinobi Forehead Metal Plate
+      ctx.save();
+      ctx.translate(head.x, head.y - 7);
+
+      ctx.fillStyle = '#08080c';
+      ctx.fillRect(-18, -4, 36, 8);
+
+      // Metal Protector Plate
+      const plateGrad = ctx.createLinearGradient(-10, -3, 10, 3);
+      plateGrad.addColorStop(0, '#555566');
+      plateGrad.addColorStop(0.5, '#c0c0d8');
+      plateGrad.addColorStop(1, '#666677');
+
+      ctx.fillStyle = plateGrad;
+      ctx.strokeStyle = hexAlpha(this.eyeColor, 0.8);
+      ctx.lineWidth = 1;
+      ctx.shadowColor = this.eyeColor;
+      ctx.shadowBlur = 8;
+      ctx.fillRect(-12, -3, 24, 6);
+      ctx.strokeRect(-12, -3, 24, 6);
+
+      ctx.restore();
+    }
+  }
+
+  private drawWeapons(
+    ctx: CanvasRenderingContext2D,
+    jp: (name: string) => Point | null,
+    isAttacking: boolean,
+    ghost: boolean,
+  ): void {
+    if (this.weapon === 'fists') return;
+
+    const handR = jp('hand_r');
+    const lowerArmR = jp('lowerArm_r');
+    const handL = jp('hand_l');
+    const lowerArmL = jp('lowerArm_l');
+
+    if (this.weapon === 'katana') {
+      if (handR && lowerArmR) {
+        this.drawKatana(ctx, handR, lowerArmR, isAttacking, ghost, false);
+      }
+    } else if (this.weapon === 'dual_blades') {
+      if (handR && lowerArmR) {
+        this.drawKatana(ctx, handR, lowerArmR, isAttacking, ghost, false);
+      }
+      if (handL && lowerArmL) {
+        this.drawKatana(ctx, handL, lowerArmL, isAttacking, ghost, true);
+      }
+    } else if (this.weapon === 'scythe') {
+      if (handR && lowerArmR) {
+        this.drawScythe(ctx, handR, lowerArmR, isAttacking, ghost);
+      }
+    }
+  }
+
+  private drawKatana(
+    ctx: CanvasRenderingContext2D,
+    hand: Point,
+    arm: Point,
+    isAttacking: boolean,
+    ghost: boolean,
+    isLeft: boolean,
+  ): void {
+    const dx = hand.x - arm.x;
+    const dy = hand.y - arm.y;
+    const baseAngle = Math.atan2(dy, dx);
+    const bladeAngle = isLeft ? baseAngle - Math.PI * 0.75 : baseAngle + 0.15 * this.direction;
+
+    ctx.save();
+    ctx.translate(hand.x, hand.y);
+    ctx.rotate(bladeAngle);
+
+    const bladeLen = 68;
+    const hiltLen = 16;
+
+    // Hilt (Tsuka)
+    ctx.strokeStyle = ghost ? hexAlpha(this.eyeColor, 0.5) : '#15151e';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(-hiltLen, 0);
+    ctx.lineTo(0, 0);
+    ctx.stroke();
+
+    // Hilt wrap diamond accents
+    if (!ghost) {
+      ctx.strokeStyle = hexAlpha(this.eyeColor, 0.7);
+      ctx.lineWidth = 1.2;
+      for (let x = -hiltLen + 3; x < 0; x += 4) {
+        ctx.beginPath();
+        ctx.moveTo(x, -2);
+        ctx.lineTo(x + 2, 2);
+        ctx.stroke();
+      }
+    }
+
+    // Tsuba (Blade Guard)
+    ctx.fillStyle = ghost ? hexAlpha(this.eyeColor, 0.8) : '#d4af37';
+    ctx.shadowColor = this.eyeColor;
+    ctx.shadowBlur = ghost ? 0 : 8;
+    ctx.fillRect(0, -5, 3.5, 10);
+
+    // Blade Outer Energy Corona
+    const glowColor = hexAlpha(this.eyeColor, isAttacking ? 0.95 : 0.6);
+    ctx.strokeStyle = glowColor;
+    ctx.lineWidth = isAttacking ? 6 : 3.5;
+    ctx.shadowColor = this.eyeColor;
+    ctx.shadowBlur = isAttacking ? 22 : 12;
+
+    ctx.beginPath();
+    ctx.moveTo(3, 0);
+    ctx.quadraticCurveTo(bladeLen * 0.6, -4, bladeLen, -2);
+    ctx.stroke();
+
+    // Steel Blade Body
+    ctx.strokeStyle = ghost ? hexAlpha(this.eyeColor, 0.7) : '#d8e0f0';
+    ctx.lineWidth = 2.4;
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.moveTo(3, 0);
+    ctx.quadraticCurveTo(bladeLen * 0.6, -4, bladeLen, -2);
+    ctx.stroke();
+
+    // Razor White Cutting Edge
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(3, -1);
+    ctx.quadraticCurveTo(bladeLen * 0.6, -4.5, bladeLen, -2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  private drawScythe(
+    ctx: CanvasRenderingContext2D,
+    hand: Point,
+    arm: Point,
+    isAttacking: boolean,
+    ghost: boolean,
+  ): void {
+    const dx = hand.x - arm.x;
+    const dy = hand.y - arm.y;
+    const baseAngle = Math.atan2(dy, dx);
+
+    ctx.save();
+    ctx.translate(hand.x, hand.y);
+    ctx.rotate(baseAngle + 0.3 * this.direction);
+
+    // Shaft (Long Pole)
+    const shaftLen = 110;
+    ctx.strokeStyle = ghost ? hexAlpha(this.eyeColor, 0.6) : '#121218';
+    ctx.lineWidth = 4.5;
+    ctx.shadowColor = this.eyeColor;
+    ctx.shadowBlur = ghost ? 4 : 8;
+    ctx.beginPath();
+    ctx.moveTo(-shaftLen * 0.35, 0);
+    ctx.lineTo(shaftLen * 0.65, 0);
+    ctx.stroke();
+
+    // Crescent Blade Head
+    const bladeHeadX = shaftLen * 0.65;
+    ctx.save();
+    ctx.translate(bladeHeadX, 0);
+
+    // Giant curved crescent blade
+    const crescentAlpha = isAttacking ? 0.95 : 0.75;
+    ctx.strokeStyle = hexAlpha(this.eyeColor, crescentAlpha);
+    ctx.lineWidth = isAttacking ? 8 : 5;
+    ctx.shadowColor = this.eyeColor;
+    ctx.shadowBlur = isAttacking ? 28 : 14;
+
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(25 * this.direction, -45, -20 * this.direction, -65);
+    ctx.stroke();
+
+    // Inner blade edge
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(25 * this.direction, -45, -20 * this.direction, -65);
+    ctx.stroke();
+
+    ctx.restore();
+    ctx.restore();
+  }
+
+  private drawProjectiles(ctx: CanvasRenderingContext2D): void {
+    if (this.projectiles.length === 0) return;
+
+    ctx.save();
+    for (const p of this.projectiles) {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.angle);
+
+      // Kunai blade
+      ctx.fillStyle = hexAlpha('#ffffff', 0.95);
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 12;
+
+      ctx.beginPath();
+      ctx.moveTo(12, 0);
+      ctx.lineTo(0, 4);
+      ctx.lineTo(-10, 2);
+      ctx.lineTo(-10, -2);
+      ctx.lineTo(0, -4);
+      ctx.closePath();
+      ctx.fill();
+
+      // Ring handle
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(-13, 0, 3, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.restore();
+    }
     ctx.restore();
   }
 }

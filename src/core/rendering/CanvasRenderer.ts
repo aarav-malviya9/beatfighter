@@ -50,6 +50,50 @@ interface FighterHealthTracking {
   lastDamageTime: number;
 }
 
+interface CombatCallout {
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  alpha: number;
+  scale: number;
+  angle: number;
+  life: number;
+  maxLife: number;
+  isCritical: boolean;
+}
+
+interface DimensionalCutLine {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  color: string;
+  width: number;
+}
+
+interface DimensionalSlashEffect {
+  active: boolean;
+  timer: number;
+  duration: number;
+  x: number;
+  y: number;
+  color: string;
+  lines: DimensionalCutLine[];
+  exploded: boolean;
+}
+
+interface ClashSpark {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  color: string;
+  size: number;
+}
+
 export class CanvasRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -91,6 +135,11 @@ export class CanvasRenderer {
     damage: 0,
     attackerIndex: 0,
   };
+
+  // Manga Combat Callouts & Dimensional Effects
+  private combatCallouts: CombatCallout[] = [];
+  private dimensionalSlash: DimensionalSlashEffect | null = null;
+  private clashSparks: ClashSpark[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -260,6 +309,116 @@ export class CanvasRenderer {
     if (this.impactFlashTimer > 0) {
       this.impactFlashTimer -= scaledDt;
     }
+
+    // Update Manga Combat Callouts
+    for (let i = this.combatCallouts.length - 1; i >= 0; i--) {
+      const c = this.combatCallouts[i];
+      c.life -= scaledDt;
+      c.y -= 28 * scaledDt;
+      c.alpha = Math.max(0, c.life / c.maxLife);
+      if (c.life <= 0) {
+        this.combatCallouts.splice(i, 1);
+      }
+    }
+
+    // Update Sword Clash Sparks
+    for (let i = this.clashSparks.length - 1; i >= 0; i--) {
+      const s = this.clashSparks[i];
+      s.life -= scaledDt;
+      s.x += s.vx * scaledDt;
+      s.y += s.vy * scaledDt;
+      s.vy += 450 * scaledDt;
+      if (s.life <= 0) {
+        this.clashSparks.splice(i, 1);
+      }
+    }
+
+    // Update Dimensional Slash / Judgment Cut Sequence
+    if (this.dimensionalSlash) {
+      this.dimensionalSlash.timer -= scaledDt;
+      if (this.dimensionalSlash.timer <= 0.12 && !this.dimensionalSlash.exploded) {
+        this.dimensionalSlash.exploded = true;
+        this.vfx.flashScreen(0.95);
+        this.vfx.emitShockwave(this.dimensionalSlash.x, this.dimensionalSlash.y, this.dimensionalSlash.color, 1.4);
+        this.camera.onFinisher();
+        this.camera.addShake(22);
+      }
+      if (this.dimensionalSlash.timer <= 0) {
+        this.dimensionalSlash = null;
+      }
+    }
+  }
+
+  public addCombatCallout(
+    x: number,
+    y: number,
+    text: string,
+    color: string = '#ff0055',
+    isCritical: boolean = false,
+  ): void {
+    if (this.combatCallouts.length > 8) this.combatCallouts.shift();
+    this.combatCallouts.push({
+      x,
+      y: y - 20,
+      text,
+      color,
+      alpha: 1,
+      scale: isCritical ? 1.6 : 1.2,
+      angle: (Math.random() - 0.5) * 0.25,
+      life: 0.9,
+      maxLife: 0.9,
+      isCritical,
+    });
+  }
+
+  public triggerSwordClash(x: number, y: number): void {
+    for (let i = 0; i < 32; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 120 + Math.random() * 320;
+      this.clashSparks.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 60,
+        life: 0.25 + Math.random() * 0.25,
+        maxLife: 0.5,
+        color: Math.random() < 0.6 ? '#ffffff' : '#ffd700',
+        size: 1.5 + Math.random() * 2,
+      });
+    }
+    this.camera.onCounter();
+    this.camera.addShake(8);
+  }
+
+  public triggerDimensionalSlash(x: number, y: number, color: string): void {
+    const lines: DimensionalCutLine[] = [];
+    const count = 12;
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI + (Math.random() - 0.5) * 0.3;
+      const len = 900;
+      lines.push({
+        x1: x - Math.cos(angle) * len,
+        y1: y - Math.sin(angle) * len,
+        x2: x + Math.cos(angle) * len,
+        y2: y + Math.sin(angle) * len,
+        color: Math.random() < 0.5 ? '#ffffff' : color,
+        width: 2 + Math.random() * 3,
+      });
+    }
+
+    this.dimensionalSlash = {
+      active: true,
+      timer: 0.45,
+      duration: 0.45,
+      x,
+      y,
+      color,
+      lines,
+      exploded: false,
+    };
+
+    this.hitstopTimer = 0.35;
+    this.camera.onFinisher();
   }
 
   public render(
@@ -377,6 +536,9 @@ export class CanvasRenderer {
       fighter.draw(ctx);
     }
 
+    // Sword Clash Sparks
+    this.drawClashSparks(ctx);
+
     // 6) Foreground VFX
     this.vfx.drawForeground(ctx);
 
@@ -432,6 +594,14 @@ export class CanvasRenderer {
 
     // Health & Combo HUD
     this.drawCombatHUD(ctx, fighters);
+
+    // Dimensional Slash Screen-space Lines
+    if (this.dimensionalSlash) {
+      this.drawDimensionalSlashScreen(ctx);
+    }
+
+    // Manga Combat Callouts
+    this.drawCombatCallouts(ctx);
   }
 
   // ---------------------------------------------------------------------------
@@ -1312,6 +1482,110 @@ export class CanvasRenderer {
     ctx.shadowBlur = 4;
     ctx.fillText(rating, 0, 28);
 
+    ctx.restore();
+  }
+
+  private drawCombatCallouts(ctx: CanvasRenderingContext2D): void {
+    if (this.combatCallouts.length === 0) return;
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+    for (const callout of this.combatCallouts) {
+      const screenX = this.width * 0.5 + (callout.x - this.camera.x) * this.camera.zoom;
+      const screenY = this.height * 0.5 + (callout.y - this.camera.y) * this.camera.zoom;
+
+      ctx.save();
+      ctx.translate(screenX, screenY);
+      ctx.rotate(callout.angle);
+      ctx.scale(callout.scale, callout.scale);
+      ctx.globalAlpha = callout.alpha;
+
+      ctx.font = '900 24px "Impact", "Arial Black", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      ctx.shadowColor = callout.color;
+      ctx.shadowBlur = callout.isCritical ? 24 : 14;
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 6;
+      ctx.strokeText(callout.text, 0, 0);
+
+      const textGrad = ctx.createLinearGradient(0, -12, 0, 12);
+      textGrad.addColorStop(0, '#ffffff');
+      textGrad.addColorStop(0.4, callout.color);
+      textGrad.addColorStop(1, '#ffffff');
+      ctx.fillStyle = textGrad;
+      ctx.fillText(callout.text, 0, 0);
+
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  private drawDimensionalSlashScreen(ctx: CanvasRenderingContext2D): void {
+    if (!this.dimensionalSlash) return;
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+    const progress = 1 - this.dimensionalSlash.timer / this.dimensionalSlash.duration;
+
+    if (progress < 0.75) {
+      ctx.globalCompositeOperation = 'difference';
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.45 * (1 - progress * 0.5)})`;
+      ctx.fillRect(0, 0, this.width, this.height);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    for (const line of this.dimensionalSlash.lines) {
+      const sx1 = this.width * 0.5 + (line.x1 - this.camera.x) * this.camera.zoom;
+      const sy1 = this.height * 0.5 + (line.y1 - this.camera.y) * this.camera.zoom;
+      const sx2 = this.width * 0.5 + (line.x2 - this.camera.x) * this.camera.zoom;
+      const sy2 = this.height * 0.5 + (line.y2 - this.camera.y) * this.camera.zoom;
+
+      ctx.strokeStyle = line.color;
+      ctx.lineWidth = line.width * (progress < 0.75 ? 3 : 1.5);
+      ctx.shadowColor = line.color;
+      ctx.shadowBlur = 18;
+      ctx.beginPath();
+      ctx.moveTo(sx1, sy1);
+      ctx.lineTo(sx2, sy2);
+      ctx.stroke();
+
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = line.width * 0.6;
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.moveTo(sx1, sy1);
+      ctx.lineTo(sx2, sy2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  private drawClashSparks(ctx: CanvasRenderingContext2D): void {
+    if (this.clashSparks.length === 0) return;
+
+    ctx.save();
+    for (const s of this.clashSparks) {
+      const alpha = s.life / s.maxLife;
+      ctx.fillStyle = s.color;
+      ctx.shadowColor = s.color;
+      ctx.shadowBlur = 10;
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(s.x - s.vx * 0.03, s.y - s.vy * 0.03);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 }
