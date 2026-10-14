@@ -1,6 +1,7 @@
 import {
   createDefaultPose,
   type Pose,
+  type MoveKeyframe,
 } from './PoseEngine';
 
 export type MovePhase = 'STARTUP' | 'ACTIVE' | 'RECOVERY' | 'FINISH';
@@ -48,11 +49,12 @@ export interface MoveDefinition {
   combo?: string[];
   finisher?: boolean;
   hitOrigin?: string;
+  keyframes?: MoveKeyframe[];
 }
 
 export type MoveRegistry = Record<string, MoveDefinition>;
 
-export type { Pose };
+export type { Pose, MoveKeyframe };
 
 /** Build a pose from default by overriding joint angles (radians) and optional root. */
 export function makePose(
@@ -70,6 +72,29 @@ export function makePose(
     pose.root.y = root.y ?? pose.root.y;
   }
   return pose;
+}
+
+export function kf(
+  time: number,
+  angles: Partial<Record<string, number>>,
+  opts?: {
+    root?: { x?: number; y?: number };
+    rootDelta?: { x: number; y: number };
+    weaponAngle?: number;
+    hitActive?: boolean;
+    phase?: 'STARTUP' | 'ACTIVE' | 'RECOVERY' | 'FINISH';
+    footPlant?: 'left' | 'right' | 'both' | 'none';
+  },
+): MoveKeyframe {
+  return {
+    time,
+    pose: makePose(angles, opts?.root),
+    rootDelta: opts?.rootDelta,
+    weaponAngle: opts?.weaponAngle,
+    hitActive: opts?.hitActive,
+    phase: opts?.phase,
+    footPlant: opts?.footPlant,
+  };
 }
 
 function move(
@@ -209,6 +234,35 @@ export const MOVES: MoveRegistry = {
       shin_r: 0.1,
       foot_r: 0.05,
     }, { x: 8 }),
+    keyframes: [
+      kf(0.0, {
+        shoulder_l: 0.1, upperArm_l: -0.2, lowerArm_l: 1.1,
+        shoulder_r: -0.15, upperArm_r: 0.45, lowerArm_r: -1.0,
+        thigh_l: 0.1, shin_l: 0.1, thigh_r: -0.15, shin_r: 0.1,
+      }, { rootDelta: { x: -3, y: 1 }, phase: 'STARTUP', footPlant: 'both', weaponAngle: -0.15 }),
+      kf(0.25, {
+        shoulder_l: 0.28, upperArm_l: 0.5, lowerArm_l: 0.5,
+        shoulder_r: -0.2, upperArm_r: 0.5, lowerArm_r: -1.1,
+        thigh_l: 0.2, shin_l: 0.12, thigh_r: -0.18, shin_r: 0.1,
+      }, { rootDelta: { x: 5, y: 0 }, phase: 'STARTUP', footPlant: 'left', weaponAngle: 0.05 }),
+      kf(0.5, {
+        hips: 0.08, spine: -0.06, chest: 0.18, neck: -0.05, head: 0.04,
+        shoulder_l: 0.35, upperArm_l: 0.85, lowerArm_l: 0.15, hand_l: 0.05,
+        shoulder_r: -0.25, upperArm_r: 0.55, lowerArm_r: -1.2,
+        thigh_l: 0.25, shin_l: 0.15, thigh_r: -0.2, shin_r: 0.1, foot_r: 0.05,
+      }, { rootDelta: { x: 12, y: 0 }, phase: 'ACTIVE', hitActive: true, footPlant: 'left', weaponAngle: 0.25 }),
+      kf(0.72, {
+        hips: 0.06, spine: -0.04, chest: 0.14,
+        shoulder_l: 0.32, upperArm_l: 0.78, lowerArm_l: 0.25, hand_l: 0.02,
+        shoulder_r: -0.22, upperArm_r: 0.5, lowerArm_r: -1.15,
+        thigh_l: 0.22, shin_l: 0.12, thigh_r: -0.16, shin_r: 0.08,
+      }, { rootDelta: { x: 14, y: 0 }, phase: 'ACTIVE', hitActive: true, footPlant: 'left', weaponAngle: 0.3 }),
+      kf(1.0, {
+        shoulder_l: 0.15, upperArm_l: -0.35, lowerArm_l: 0.85, hand_l: 0.1,
+        shoulder_r: -0.12, upperArm_r: 0.4, lowerArm_r: -0.9, hand_r: -0.1,
+        thigh_l: 0.12, shin_l: 0.08, thigh_r: -0.08, shin_r: 0.05,
+      }, { rootDelta: { x: 0, y: 0 }, phase: 'RECOVERY', footPlant: 'both', weaponAngle: 0 }),
+    ],
     combo: ['cross', 'hook', 'body_blow'],
   }),
 
@@ -250,6 +304,38 @@ export const MOVES: MoveRegistry = {
       shin_r: 0.2,
       foot_r: 0.1,
     }, { x: 14 }),
+    keyframes: [
+      kf(0.0, {
+        hips: 0.1, spine: -0.08, chest: 0.15,
+        shoulder_l: 0.25, upperArm_l: 0.2, lowerArm_l: 0.8,
+        shoulder_r: -0.35, upperArm_r: -0.3, lowerArm_r: -1.3,
+        thigh_l: 0.2, shin_l: 0.15, thigh_r: -0.3, shin_r: 0.25,
+      }, { rootDelta: { x: -4, y: 2 }, phase: 'STARTUP', footPlant: 'both', weaponAngle: -0.3 }),
+      kf(0.3, {
+        hips: -0.05, spine: 0.04, chest: -0.1,
+        shoulder_l: 0.35, upperArm_l: -0.2, lowerArm_l: 1.0,
+        shoulder_r: -0.25, upperArm_r: 0.9, lowerArm_r: -0.6,
+        thigh_l: 0.18, shin_l: 0.12, thigh_r: -0.32, shin_r: 0.22,
+      }, { rootDelta: { x: 8, y: 0 }, phase: 'STARTUP', footPlant: 'left', weaponAngle: 0.1 }),
+      kf(0.55, {
+        hips: -0.15, spine: 0.12, chest: -0.22, neck: 0.08, head: -0.06,
+        shoulder_l: 0.4, upperArm_l: -0.5, lowerArm_l: 1.1,
+        shoulder_r: -0.2, upperArm_r: 1.55, lowerArm_r: -0.08, hand_r: 0.05,
+        thigh_l: 0.15, shin_l: 0.1, thigh_r: -0.35, shin_r: 0.2, foot_r: 0.1,
+      }, { rootDelta: { x: 20, y: 0 }, phase: 'ACTIVE', hitActive: true, footPlant: 'left', weaponAngle: 0.45 }),
+      kf(0.75, {
+        hips: -0.18, spine: 0.15, chest: -0.26,
+        shoulder_l: 0.42, upperArm_l: -0.55, lowerArm_l: 1.15,
+        shoulder_r: -0.15, upperArm_r: 1.45, lowerArm_r: -0.12,
+        thigh_l: 0.16, shin_l: 0.1, thigh_r: -0.32, shin_r: 0.18,
+      }, { rootDelta: { x: 22, y: 0 }, phase: 'ACTIVE', hitActive: true, footPlant: 'left', weaponAngle: 0.5 }),
+      kf(1.0, {
+        hips: 0.02, spine: -0.04, chest: 0.03,
+        shoulder_l: 0.15, upperArm_l: -0.35, lowerArm_l: 0.85,
+        shoulder_r: -0.12, upperArm_r: 0.4, lowerArm_r: -0.9,
+        thigh_l: 0.12, shin_l: 0.08, thigh_r: -0.08, shin_r: 0.05,
+      }, { rootDelta: { x: 0, y: 0 }, phase: 'RECOVERY', footPlant: 'both', weaponAngle: 0 }),
+    ],
     combo: ['hook', 'uppercut', 'low_kick'],
   }),
 
@@ -290,6 +376,37 @@ export const MOVES: MoveRegistry = {
       thigh_r: -0.4,
       shin_r: 0.25,
     }, { x: 10 }),
+    keyframes: [
+      kf(0.0, {
+        hips: 0.15, spine: -0.1, chest: 0.2,
+        shoulder_l: 0.35, upperArm_l: 0.1, lowerArm_l: 0.9,
+        shoulder_r: -0.4, upperArm_r: -0.4, lowerArm_r: -1.4,
+        thigh_l: 0.35, shin_l: 0.3, thigh_r: -0.25, shin_r: 0.2,
+      }, { rootDelta: { x: -2, y: 4 }, phase: 'STARTUP', footPlant: 'both', weaponAngle: -0.6 }),
+      kf(0.3, {
+        hips: -0.1, spine: 0.1, chest: -0.15,
+        shoulder_l: 0.45, upperArm_l: -0.3, lowerArm_l: 1.1,
+        shoulder_r: 0.2, upperArm_r: 0.8, lowerArm_r: -1.2,
+        thigh_l: 0.32, shin_l: 0.25, thigh_r: -0.35, shin_r: 0.22,
+      }, { rootDelta: { x: 6, y: 1 }, phase: 'STARTUP', footPlant: 'left', weaponAngle: 0.3 }),
+      kf(0.55, {
+        hips: -0.22, spine: 0.18, chest: -0.35, neck: 0.15, head: -0.1,
+        shoulder_l: 0.5, upperArm_l: -0.4, lowerArm_l: 1.3,
+        shoulder_r: 0.45, upperArm_r: 1.1, lowerArm_r: -1.4, hand_r: -0.2,
+        thigh_l: 0.3, shin_l: 0.2, thigh_r: -0.4, shin_r: 0.25,
+      }, { rootDelta: { x: 16, y: 0 }, phase: 'ACTIVE', hitActive: true, footPlant: 'left', weaponAngle: 1.25 }),
+      kf(0.78, {
+        hips: -0.28, spine: 0.22, chest: -0.42,
+        shoulder_l: 0.55, upperArm_l: -0.5, lowerArm_l: 1.35,
+        shoulder_r: 0.5, upperArm_r: 1.25, lowerArm_r: -1.5,
+        thigh_l: 0.28, shin_l: 0.18, thigh_r: -0.42, shin_r: 0.22,
+      }, { rootDelta: { x: 18, y: 0 }, phase: 'ACTIVE', hitActive: true, footPlant: 'left', weaponAngle: 1.6 }),
+      kf(1.0, {
+        shoulder_l: 0.15, upperArm_l: -0.35, lowerArm_l: 0.85,
+        shoulder_r: -0.12, upperArm_r: 0.4, lowerArm_r: -0.9,
+        thigh_l: 0.12, shin_l: 0.08, thigh_r: -0.08, shin_r: 0.05,
+      }, { rootDelta: { x: 0, y: 0 }, phase: 'RECOVERY', footPlant: 'both', weaponAngle: 0 }),
+    ],
     combo: ['uppercut', 'roundhouse'],
   }),
 
@@ -330,6 +447,37 @@ export const MOVES: MoveRegistry = {
       thigh_r: -0.25,
       shin_r: 0.35,
     }, { x: 6, y: -12 }),
+    keyframes: [
+      kf(0.0, {
+        hips: 0.2, spine: 0.35, chest: 0.25,
+        shoulder_l: 0.3, upperArm_l: -0.3, lowerArm_l: 1.1,
+        shoulder_r: -0.35, upperArm_r: -0.2, lowerArm_r: -1.4,
+        thigh_l: 0.65, shin_l: 0.9, thigh_r: -0.1, shin_r: 0.8,
+      }, { rootDelta: { x: -2, y: 14 }, phase: 'STARTUP', footPlant: 'both', weaponAngle: 1.2 }),
+      kf(0.3, {
+        hips: 0.15, spine: -0.1, chest: 0.05,
+        shoulder_l: 0.3, upperArm_l: -0.5, lowerArm_l: 1.0,
+        shoulder_r: -0.35, upperArm_r: 0.1, lowerArm_r: -0.8,
+        thigh_l: 0.45, shin_l: 0.4, thigh_r: -0.2, shin_r: 0.4,
+      }, { rootDelta: { x: 6, y: -6 }, phase: 'STARTUP', footPlant: 'both', weaponAngle: 0.0 }),
+      kf(0.55, {
+        hips: 0.1, spine: -0.3, chest: -0.15, neck: -0.2, head: -0.15,
+        shoulder_l: 0.3, upperArm_l: -0.6, lowerArm_l: 1.0,
+        shoulder_r: -0.35, upperArm_r: 0.35, lowerArm_r: -0.15, hand_r: 0.1,
+        thigh_l: 0.45, shin_l: 0.55, thigh_r: -0.25, shin_r: 0.35,
+      }, { rootDelta: { x: 12, y: -24 }, phase: 'ACTIVE', hitActive: true, footPlant: 'none', weaponAngle: -1.4 }),
+      kf(0.78, {
+        hips: 0.05, spine: -0.25, chest: -0.1,
+        shoulder_l: 0.25, upperArm_l: -0.5, lowerArm_l: 0.9,
+        shoulder_r: -0.3, upperArm_r: 0.45, lowerArm_r: 0.0,
+        thigh_l: 0.35, shin_l: 0.3, thigh_r: -0.2, shin_r: 0.25,
+      }, { rootDelta: { x: 14, y: -18 }, phase: 'ACTIVE', hitActive: true, footPlant: 'none', weaponAngle: -1.6 }),
+      kf(1.0, {
+        shoulder_l: 0.15, upperArm_l: -0.35, lowerArm_l: 0.85,
+        shoulder_r: -0.12, upperArm_r: 0.4, lowerArm_r: -0.9,
+        thigh_l: 0.12, shin_l: 0.08, thigh_r: -0.08, shin_r: 0.05,
+      }, { rootDelta: { x: 0, y: 0 }, phase: 'RECOVERY', footPlant: 'both', weaponAngle: 0 }),
+    ],
     combo: ['aerial_pursuit', 'roundhouse'],
   }),
 
@@ -450,6 +598,37 @@ export const MOVES: MoveRegistry = {
       shin_r: 0.15,
       foot_r: 0.6,
     }, { x: 4, y: -8 }),
+    keyframes: [
+      kf(0.0, {
+        hips: -0.1, spine: 0.05, chest: -0.1,
+        shoulder_l: 0.35, upperArm_l: -0.4, lowerArm_l: 1.0,
+        shoulder_r: -0.3, upperArm_r: 0.4, lowerArm_r: -0.9,
+        thigh_l: 0.2, shin_l: 0.2, thigh_r: 0.4, shin_r: 1.1,
+      }, { rootDelta: { x: -3, y: 1 }, phase: 'STARTUP', footPlant: 'left', weaponAngle: -0.4 }),
+      kf(0.28, {
+        hips: -0.22, spine: 0.15, chest: -0.28,
+        shoulder_l: 0.5, upperArm_l: -0.6, lowerArm_l: 1.1,
+        shoulder_r: -0.5, upperArm_r: 0.7, lowerArm_r: -1.0,
+        thigh_l: 0.3, shin_l: 0.25, thigh_r: 0.1, shin_r: 0.6, foot_r: 0.4,
+      }, { rootDelta: { x: 8, y: -4 }, phase: 'STARTUP', footPlant: 'left', weaponAngle: 0.6 }),
+      kf(0.55, {
+        hips: -0.28, spine: 0.2, chest: -0.4, neck: 0.2, head: -0.15,
+        shoulder_l: 0.6, upperArm_l: -0.7, lowerArm_l: 1.2,
+        shoulder_r: -0.7, upperArm_r: 0.9, lowerArm_r: -1.0,
+        thigh_l: 0.35, shin_l: 0.3, thigh_r: -0.2, shin_r: 0.15, foot_r: 0.6,
+      }, { rootDelta: { x: 22, y: -10 }, phase: 'ACTIVE', hitActive: true, footPlant: 'left', weaponAngle: 1.6 }),
+      kf(0.78, {
+        hips: -0.32, spine: 0.22, chest: -0.45,
+        shoulder_l: 0.65, upperArm_l: -0.75, lowerArm_l: 1.25,
+        shoulder_r: -0.65, upperArm_r: 0.85, lowerArm_r: -0.95,
+        thigh_l: 0.3, shin_l: 0.28, thigh_r: -0.35, shin_r: 0.3, foot_r: 0.5,
+      }, { rootDelta: { x: 24, y: -6 }, phase: 'ACTIVE', hitActive: true, footPlant: 'left', weaponAngle: 1.9 }),
+      kf(1.0, {
+        shoulder_l: 0.15, upperArm_l: -0.35, lowerArm_l: 0.85,
+        shoulder_r: -0.12, upperArm_r: 0.4, lowerArm_r: -0.9,
+        thigh_l: 0.12, shin_l: 0.08, thigh_r: -0.08, shin_r: 0.05,
+      }, { rootDelta: { x: 0, y: 0 }, phase: 'RECOVERY', footPlant: 'both', weaponAngle: 0 }),
+    ],
     combo: ['spinning_kick', 'ground_slam'],
   }),
 
@@ -490,6 +669,39 @@ export const MOVES: MoveRegistry = {
       thigh_r: 0.6,
       shin_r: 0.4,
     }, { x: -4, y: -10 }),
+    keyframes: [
+      kf(0.0, {
+        hips: 0.15, spine: 0.1, chest: 0.2,
+        shoulder_l: -0.2, upperArm_l: -0.5, lowerArm_l: 0.6,
+        shoulder_r: 0.3, upperArm_r: 0.6, lowerArm_r: -0.7,
+        thigh_l: 0.2, shin_l: 0.15, thigh_r: -0.15, shin_r: 0.2,
+      }, { rootDelta: { x: -4, y: 0 }, phase: 'STARTUP', footPlant: 'both', weaponAngle: -0.8 }),
+      kf(0.28, {
+        hips: 0.25, spine: 0.12, chest: 0.3,
+        shoulder_l: -0.3, upperArm_l: -0.8, lowerArm_l: 0.7,
+        shoulder_r: 0.4, upperArm_r: 0.9, lowerArm_r: -0.8,
+        thigh_l: -0.2, shin_l: 0.5, thigh_r: 0.3, shin_r: 0.4,
+      }, { rootDelta: { x: 8, y: -16 }, phase: 'STARTUP', footPlant: 'none', weaponAngle: 1.2 }),
+      kf(0.52, {
+        hips: 0.35, spine: 0.15, chest: 0.45, neck: 0.25, head: 0.2,
+        shoulder_l: -0.4, upperArm_l: -1.0, lowerArm_l: 0.8,
+        shoulder_r: 0.5, upperArm_r: 1.2, lowerArm_r: -0.9,
+        thigh_l: -0.5, shin_l: 0.2, foot_l: 0.7,
+        thigh_r: 0.6, shin_r: 0.4,
+      }, { rootDelta: { x: 26, y: -20 }, phase: 'ACTIVE', hitActive: true, footPlant: 'none', weaponAngle: 2.7 }),
+      kf(0.76, {
+        hips: 0.2, spine: 0.1, chest: 0.25,
+        shoulder_l: -0.2, upperArm_l: -0.7, lowerArm_l: 0.7,
+        shoulder_r: 0.3, upperArm_r: 0.8, lowerArm_r: -0.8,
+        thigh_l: -0.2, shin_l: 0.3, thigh_r: 0.3, shin_r: 0.3,
+      }, { rootDelta: { x: 28, y: -8 }, phase: 'ACTIVE', hitActive: true, footPlant: 'none', weaponAngle: 3.2 }),
+      kf(1.0, {
+        shoulder_l: 0.15, upperArm_l: -0.35, lowerArm_l: 0.85,
+        shoulder_r: -0.12, upperArm_r: 0.4, lowerArm_r: -0.9,
+        thigh_l: 0.12, shin_l: 0.08, thigh_r: -0.08, shin_r: 0.05,
+      }, { rootDelta: { x: 0, y: 0 }, phase: 'RECOVERY', footPlant: 'both', weaponAngle: 0 }),
+    ],
+    combo: ['ground_slam'],
   }),
 
   sweep: move({
@@ -529,6 +741,38 @@ export const MOVES: MoveRegistry = {
       shin_r: 0.2,
       foot_r: 0.5,
     }, { x: 4, y: 28 }),
+    keyframes: [
+      kf(0.0, {
+        hips: 0.1, spine: 0.25, chest: 0.2,
+        shoulder_l: 0.3, upperArm_l: -0.2, lowerArm_l: 1.1,
+        shoulder_r: -0.2, upperArm_r: 0.3, lowerArm_r: -1.0,
+        thigh_l: 0.5, shin_l: 1.0, thigh_r: 0.6, shin_r: 0.9,
+      }, { rootDelta: { x: -2, y: 16 }, phase: 'STARTUP', footPlant: 'both', weaponAngle: 0.3 }),
+      kf(0.28, {
+        hips: 0.16, spine: 0.3, chest: 0.22,
+        shoulder_l: 0.35, upperArm_l: -0.25, lowerArm_l: 1.05,
+        shoulder_r: -0.25, upperArm_r: 0.35, lowerArm_r: -0.95,
+        thigh_l: 0.6, shin_l: 1.2, thigh_r: 0.9, shin_r: 0.4, foot_r: 0.4,
+      }, { rootDelta: { x: 4, y: 26 }, phase: 'STARTUP', footPlant: 'left', weaponAngle: 0.6 }),
+      kf(0.55, {
+        hips: 0.2, spine: 0.35, chest: 0.25, neck: 0.2,
+        shoulder_l: 0.4, upperArm_l: -0.3, lowerArm_l: 1.0,
+        shoulder_r: -0.3, upperArm_r: 0.4, lowerArm_r: -0.9,
+        thigh_l: 0.7, shin_l: 1.4, foot_l: 0.2,
+        thigh_r: 1.1, shin_r: 0.2, foot_r: 0.5,
+      }, { rootDelta: { x: 14, y: 32 }, phase: 'ACTIVE', hitActive: true, footPlant: 'left', weaponAngle: 0.9 }),
+      kf(0.78, {
+        hips: 0.18, spine: 0.3, chest: 0.2,
+        shoulder_l: 0.35, upperArm_l: -0.25, lowerArm_l: 0.95,
+        shoulder_r: -0.25, upperArm_r: 0.35, lowerArm_r: -0.85,
+        thigh_l: 0.65, shin_l: 1.3, thigh_r: 0.8, shin_r: 0.4,
+      }, { rootDelta: { x: 12, y: 24 }, phase: 'ACTIVE', hitActive: true, footPlant: 'left', weaponAngle: 0.5 }),
+      kf(1.0, {
+        shoulder_l: 0.15, upperArm_l: -0.35, lowerArm_l: 0.85,
+        shoulder_r: -0.12, upperArm_r: 0.4, lowerArm_r: -0.9,
+        thigh_l: 0.12, shin_l: 0.08, thigh_r: -0.08, shin_r: 0.05,
+      }, { rootDelta: { x: 0, y: 0 }, phase: 'RECOVERY', footPlant: 'both', weaponAngle: 0 }),
+    ],
     combo: ['ground_slam', 'uppercut'],
   }),
 
@@ -875,6 +1119,31 @@ export const MOVES: MoveRegistry = {
       thigh_r: -0.45,
       shin_r: 0.3,
     }, { x: 35, y: -6 }),
+    keyframes: [
+      kf(0.0, {
+        hips: 0.0, spine: -0.15, chest: -0.1,
+        shoulder_l: 0.4, upperArm_l: -0.7, lowerArm_l: 0.6,
+        shoulder_r: -0.45, upperArm_r: 0.8, lowerArm_r: -0.6,
+        thigh_l: 0.3, shin_l: 0.2, thigh_r: -0.3, shin_r: 0.2,
+      }, { rootDelta: { x: 0, y: 2 }, phase: 'STARTUP', footPlant: 'both', weaponAngle: 0.2 }),
+      kf(0.35, {
+        hips: 0.0, spine: -0.35, chest: -0.2, neck: -0.15,
+        shoulder_l: 0.6, upperArm_l: -1.1, lowerArm_l: 0.4,
+        shoulder_r: -0.65, upperArm_r: 1.2, lowerArm_r: -0.35,
+        thigh_l: 0.4, shin_l: 0.25, thigh_r: -0.45, shin_r: 0.3,
+      }, { rootDelta: { x: 60, y: -6 }, phase: 'ACTIVE', hitActive: false, footPlant: 'none', weaponAngle: 0.8 }),
+      kf(0.70, {
+        hips: -0.1, spine: -0.2, chest: -0.15,
+        shoulder_l: 0.5, upperArm_l: -0.9, lowerArm_l: 0.5,
+        shoulder_r: -0.5, upperArm_r: 1.0, lowerArm_r: -0.5,
+        thigh_l: 0.35, shin_l: 0.2, thigh_r: -0.35, shin_r: 0.25,
+      }, { rootDelta: { x: 120, y: 0 }, phase: 'ACTIVE', hitActive: false, footPlant: 'both', weaponAngle: 0.4 }),
+      kf(1.0, {
+        shoulder_l: 0.15, upperArm_l: -0.35, lowerArm_l: 0.85,
+        shoulder_r: -0.12, upperArm_r: 0.4, lowerArm_r: -0.9,
+        thigh_l: 0.12, shin_l: 0.08, thigh_r: -0.08, shin_r: 0.05,
+      }, { rootDelta: { x: 0, y: 0 }, phase: 'RECOVERY', footPlant: 'both', weaponAngle: 0 }),
+    ],
   }),
 
   // —— Combos / aerial / slam ——
@@ -990,6 +1259,37 @@ export const MOVES: MoveRegistry = {
       shin_r: 0.3,
       foot_r: 0.5,
     }, { x: 12, y: -55 }),
+    keyframes: [
+      kf(0.0, {
+        hips: 0.1, spine: 0.3, chest: 0.2,
+        shoulder_l: 0.4, upperArm_l: -0.5, lowerArm_l: 1.0,
+        shoulder_r: -0.4, upperArm_r: 0.5, lowerArm_r: -1.2,
+        thigh_l: 0.6, shin_l: 0.9, thigh_r: 0.5, shin_r: 0.8,
+      }, { rootDelta: { x: -2, y: 15 }, phase: 'STARTUP', footPlant: 'both', weaponAngle: 1.4 }),
+      kf(0.25, {
+        hips: -0.05, spine: -0.2, chest: -0.1,
+        shoulder_l: 0.45, upperArm_l: -0.7, lowerArm_l: 0.9,
+        shoulder_r: -0.5, upperArm_r: 0.7, lowerArm_r: -0.9,
+        thigh_l: 0.45, shin_l: 0.5, thigh_r: -0.5, shin_r: 0.4,
+      }, { rootDelta: { x: 8, y: -25 }, phase: 'STARTUP', footPlant: 'none', weaponAngle: -0.5 }),
+      kf(0.52, {
+        hips: -0.1, spine: -0.35, chest: -0.15, neck: -0.2,
+        shoulder_l: 0.5, upperArm_l: -0.8, lowerArm_l: 0.9,
+        shoulder_r: -0.55, upperArm_r: 0.85, lowerArm_r: -0.8,
+        thigh_l: 0.5, shin_l: 0.6, thigh_r: -0.9, shin_r: 0.3, foot_r: 0.5,
+      }, { rootDelta: { x: 18, y: -65 }, phase: 'ACTIVE', hitActive: true, footPlant: 'none', weaponAngle: -2.1 }),
+      kf(0.78, {
+        hips: -0.15, spine: -0.4, chest: -0.2,
+        shoulder_l: 0.45, upperArm_l: -0.75, lowerArm_l: 0.85,
+        shoulder_r: -0.5, upperArm_r: 0.75, lowerArm_r: -0.75,
+        thigh_l: 0.4, shin_l: 0.5, thigh_r: -0.7, shin_r: 0.4,
+      }, { rootDelta: { x: 22, y: -50 }, phase: 'ACTIVE', hitActive: true, footPlant: 'none', weaponAngle: -2.8 }),
+      kf(1.0, {
+        shoulder_l: 0.2, upperArm_l: -0.4, lowerArm_l: 0.8,
+        shoulder_r: -0.2, upperArm_r: 0.4, lowerArm_r: -0.8,
+        thigh_l: 0.2, shin_l: 0.2, thigh_r: -0.2, shin_r: 0.2,
+      }, { rootDelta: { x: 0, y: 0 }, phase: 'RECOVERY', footPlant: 'none', weaponAngle: 0 }),
+    ],
     combo: ['aerial_pursuit', 'ground_slam'],
   }),
 
@@ -1029,6 +1329,37 @@ export const MOVES: MoveRegistry = {
       thigh_r: 0.75,
       shin_r: 1.1,
     }, { x: 8, y: 20 }),
+    keyframes: [
+      kf(0.0, {
+        hips: -0.1, spine: -0.4, chest: -0.25,
+        shoulder_l: 0.8, upperArm_l: -1.3, lowerArm_l: 0.4,
+        shoulder_r: -0.8, upperArm_r: 1.3, lowerArm_r: -0.4,
+        thigh_l: 0.5, shin_l: 0.6, thigh_r: -0.5, shin_r: 0.6,
+      }, { rootDelta: { x: 0, y: -60 }, phase: 'STARTUP', footPlant: 'none', weaponAngle: -2.6 }),
+      kf(0.3, {
+        hips: 0.1, spine: 0.2, chest: 0.15,
+        shoulder_l: 0.7, upperArm_l: 0.2, lowerArm_l: 0.5,
+        shoulder_r: -0.6, upperArm_r: 0.6, lowerArm_r: -0.5,
+        thigh_l: 0.7, shin_l: 0.9, thigh_r: 0.6, shin_r: 0.8,
+      }, { rootDelta: { x: 8, y: -20 }, phase: 'STARTUP', footPlant: 'none', weaponAngle: 0.8 }),
+      kf(0.55, {
+        hips: 0.15, spine: 0.55, chest: 0.4, neck: 0.35, head: 0.25,
+        shoulder_l: 0.6, upperArm_l: 0.8, lowerArm_l: 0.3,
+        shoulder_r: -0.5, upperArm_r: 1.3, lowerArm_r: -0.2,
+        thigh_l: 0.85, shin_l: 1.2, thigh_r: 0.75, shin_r: 1.1,
+      }, { rootDelta: { x: 16, y: 22 }, phase: 'ACTIVE', hitActive: true, footPlant: 'both', weaponAngle: 1.8 }),
+      kf(0.78, {
+        hips: 0.12, spine: 0.5, chest: 0.35,
+        shoulder_l: 0.55, upperArm_l: 0.7, lowerArm_l: 0.35,
+        shoulder_r: -0.45, upperArm_r: 1.2, lowerArm_r: -0.25,
+        thigh_l: 0.8, shin_l: 1.15, thigh_r: 0.7, shin_r: 1.05,
+      }, { rootDelta: { x: 14, y: 20 }, phase: 'ACTIVE', hitActive: true, footPlant: 'both', weaponAngle: 1.5 }),
+      kf(1.0, {
+        shoulder_l: 0.15, upperArm_l: -0.35, lowerArm_l: 0.85,
+        shoulder_r: -0.12, upperArm_r: 0.4, lowerArm_r: -0.9,
+        thigh_l: 0.12, shin_l: 0.08, thigh_r: -0.08, shin_r: 0.05,
+      }, { rootDelta: { x: 0, y: 0 }, phase: 'RECOVERY', footPlant: 'both', weaponAngle: 0 }),
+    ],
   }),
 
   // —— Specials ——
@@ -1242,6 +1573,38 @@ export const MOVES: MoveRegistry = {
     forwardMovement: -35,
     cancelWindow: 0,
     pose: KNOCKDOWN_POSE,
+    keyframes: [
+      kf(0.0, {
+        hips: 0.2, spine: 0.3, chest: 0.2, neck: 0.1,
+        shoulder_l: 0.6, upperArm_l: -0.9, lowerArm_l: 0.8,
+        shoulder_r: -0.7, upperArm_r: 1.1, lowerArm_r: -0.7,
+        thigh_l: 0.6, shin_l: 0.8, thigh_r: 0.5, shin_r: 0.7,
+      }, { rootDelta: { x: -20, y: -25 }, phase: 'ACTIVE', hitActive: false, footPlant: 'none', weaponAngle: -0.8 }),
+      kf(0.30, {
+        hips: 0.35, spine: 0.5, chest: 0.3, neck: 0.15,
+        shoulder_l: 0.75, upperArm_l: -1.1, lowerArm_l: 0.7,
+        shoulder_r: -0.8, upperArm_r: 1.2, lowerArm_r: -0.6,
+        thigh_l: 0.85, shin_l: 1.0, thigh_r: 0.7, shin_r: 0.9,
+      }, { rootDelta: { x: -45, y: -15 }, phase: 'ACTIVE', hitActive: false, footPlant: 'none', weaponAngle: -1.4 }),
+      kf(0.55, {
+        hips: 0.4, spine: 0.6, chest: 0.35, neck: 0.2, head: 0.15,
+        shoulder_l: 0.8, upperArm_l: -1.2, lowerArm_l: 0.6,
+        shoulder_r: -0.9, upperArm_r: 1.4, lowerArm_r: -0.5,
+        thigh_l: 1.0, shin_l: 1.2, foot_l: 0.3,
+        thigh_r: 0.85, shin_r: 1.1, foot_r: 0.25,
+      }, { rootDelta: { x: -65, y: 45 }, phase: 'ACTIVE', hitActive: false, footPlant: 'both', weaponAngle: 1.0 }),
+      kf(0.78, {
+        hips: 0.3, spine: 0.45, chest: 0.25,
+        shoulder_l: 0.65, upperArm_l: -0.9, lowerArm_l: 0.8,
+        shoulder_r: -0.7, upperArm_r: 1.0, lowerArm_r: -0.7,
+        thigh_l: 0.7, shin_l: 0.9, thigh_r: 0.6, shin_r: 0.8,
+      }, { rootDelta: { x: -75, y: 40 }, phase: 'RECOVERY', hitActive: false, footPlant: 'both', weaponAngle: 0.6 }),
+      kf(1.0, {
+        shoulder_l: 0.15, upperArm_l: -0.35, lowerArm_l: 0.85,
+        shoulder_r: -0.12, upperArm_r: 0.4, lowerArm_r: -0.9,
+        thigh_l: 0.12, shin_l: 0.08, thigh_r: -0.08, shin_r: 0.05,
+      }, { rootDelta: { x: 0, y: 0 }, phase: 'RECOVERY', footPlant: 'both', weaponAngle: 0 }),
+    ],
   }),
 
   hit_react: move({
@@ -1261,6 +1624,31 @@ export const MOVES: MoveRegistry = {
     forwardMovement: -12,
     cancelWindow: 0,
     pose: HIT_POSE,
+    keyframes: [
+      kf(0.0, {
+        hips: -0.12, spine: -0.25, chest: -0.2, neck: -0.35, head: -0.2,
+        shoulder_l: 0.4, upperArm_l: -0.8, lowerArm_l: 1.4,
+        shoulder_r: -0.5, upperArm_r: 0.9, lowerArm_r: -1.5,
+        thigh_l: 0.35, shin_l: 0.4, thigh_r: -0.45, shin_r: 0.5,
+      }, { rootDelta: { x: -8, y: 2 }, phase: 'ACTIVE', hitActive: false, footPlant: 'both', weaponAngle: -0.3 }),
+      kf(0.35, {
+        hips: -0.18, spine: -0.3, chest: -0.25, neck: -0.2,
+        shoulder_l: 0.45, upperArm_l: -0.7, lowerArm_l: 1.2,
+        shoulder_r: -0.45, upperArm_r: 0.8, lowerArm_r: -1.3,
+        thigh_l: 0.4, shin_l: 0.45, thigh_r: -0.5, shin_r: 0.55,
+      }, { rootDelta: { x: -18, y: 4 }, phase: 'ACTIVE', hitActive: false, footPlant: 'right', weaponAngle: -0.2 }),
+      kf(0.70, {
+        hips: -0.08, spine: -0.15, chest: -0.1,
+        shoulder_l: 0.3, upperArm_l: -0.5, lowerArm_l: 1.0,
+        shoulder_r: -0.3, upperArm_r: 0.6, lowerArm_r: -1.1,
+        thigh_l: 0.25, shin_l: 0.2, thigh_r: -0.25, shin_r: 0.2,
+      }, { rootDelta: { x: -14, y: 1 }, phase: 'RECOVERY', footPlant: 'both', weaponAngle: -0.1 }),
+      kf(1.0, {
+        shoulder_l: 0.15, upperArm_l: -0.35, lowerArm_l: 0.85,
+        shoulder_r: -0.12, upperArm_r: 0.4, lowerArm_r: -0.9,
+        thigh_l: 0.12, shin_l: 0.08, thigh_r: -0.08, shin_r: 0.05,
+      }, { rootDelta: { x: 0, y: 0 }, phase: 'RECOVERY', footPlant: 'both', weaponAngle: 0 }),
+    ],
   }),
 
   finisher_strike: move({
@@ -1300,6 +1688,37 @@ export const MOVES: MoveRegistry = {
       thigh_r: -0.65,
       shin_r: 0.4,
     }, { x: 30, y: -10 }),
+    keyframes: [
+      kf(0.0, {
+        hips: -0.15, spine: 0.1, chest: -0.2,
+        shoulder_l: 0.4, upperArm_l: -0.5, lowerArm_l: 1.2,
+        shoulder_r: -0.3, upperArm_r: 0.2, lowerArm_r: -1.3, hand_r: -0.3,
+        thigh_l: 0.4, shin_l: 0.5, thigh_r: -0.4, shin_r: 0.4,
+      }, { rootDelta: { x: -4, y: 4 }, phase: 'STARTUP', footPlant: 'both', weaponAngle: -0.8 }),
+      kf(0.22, {
+        hips: 0.0, spine: -0.3, chest: -0.2,
+        shoulder_l: 0.6, upperArm_l: -1.0, lowerArm_l: 0.4,
+        shoulder_r: -0.6, upperArm_r: 1.1, lowerArm_r: -0.4,
+        thigh_l: 0.5, shin_l: 0.3, thigh_r: -0.5, shin_r: 0.3,
+      }, { rootDelta: { x: 50, y: -4 }, phase: 'STARTUP', footPlant: 'none', weaponAngle: 0.0 }),
+      kf(0.48, {
+        hips: -0.25, spine: 0.15, chest: -0.45, neck: 0.2, head: -0.15,
+        shoulder_l: 0.8, upperArm_l: -1.0, lowerArm_l: 1.5,
+        shoulder_r: -0.05, upperArm_r: 1.85, lowerArm_r: -0.05, hand_r: 0.2,
+        thigh_l: 0.45, shin_l: 0.35, thigh_r: -0.65, shin_r: 0.4,
+      }, { rootDelta: { x: 75, y: -6 }, phase: 'ACTIVE', hitActive: true, footPlant: 'left', weaponAngle: 1.35 }),
+      kf(0.75, {
+        hips: -0.15, spine: 0.1, chest: -0.25,
+        shoulder_l: 0.5, upperArm_l: -0.7, lowerArm_l: 1.3,
+        shoulder_r: -0.15, upperArm_r: 1.4, lowerArm_r: -0.2,
+        thigh_l: 0.35, shin_l: 0.25, thigh_r: -0.45, shin_r: 0.3,
+      }, { rootDelta: { x: 80, y: -2 }, phase: 'ACTIVE', hitActive: true, footPlant: 'both', weaponAngle: 0.4 }),
+      kf(1.0, {
+        shoulder_l: 0.15, upperArm_l: -0.35, lowerArm_l: 0.85,
+        shoulder_r: -0.12, upperArm_r: 0.4, lowerArm_r: -0.9,
+        thigh_l: 0.12, shin_l: 0.08, thigh_r: -0.08, shin_r: 0.05,
+      }, { rootDelta: { x: 0, y: 0 }, phase: 'RECOVERY', footPlant: 'both', weaponAngle: 0 }),
+    ],
     finisher: true,
   }),
 
@@ -1340,6 +1759,37 @@ export const MOVES: MoveRegistry = {
       shin_r: 0.1,
       foot_r: 0.75,
     }, { x: 10, y: -20 }),
+    keyframes: [
+      kf(0.0, {
+        hips: 0.2, spine: 0.1, chest: 0.25,
+        shoulder_l: -0.3, upperArm_l: -0.6, lowerArm_l: 0.7,
+        shoulder_r: 0.35, upperArm_r: 0.7, lowerArm_r: -0.8,
+        thigh_l: 0.4, shin_l: 0.4, thigh_r: -0.2, shin_r: 0.3,
+      }, { rootDelta: { x: -6, y: 6 }, phase: 'STARTUP', footPlant: 'both', weaponAngle: -0.5 }),
+      kf(0.24, {
+        hips: -0.15, spine: -0.2, chest: -0.1,
+        shoulder_l: 0.5, upperArm_l: -0.8, lowerArm_l: 0.9,
+        shoulder_r: -0.6, upperArm_r: 0.9, lowerArm_r: -0.8,
+        thigh_l: 0.3, shin_l: 0.3, thigh_r: 0.2, shin_r: 0.8,
+      }, { rootDelta: { x: 15, y: -18 }, phase: 'STARTUP', footPlant: 'none', weaponAngle: 0.6 }),
+      kf(0.50, {
+        hips: -0.3, spine: 0.25, chest: -0.5, neck: 0.25, head: -0.2,
+        shoulder_l: 0.7, upperArm_l: -0.85, lowerArm_l: 1.1,
+        shoulder_r: -0.8, upperArm_r: 1.0, lowerArm_r: -0.9,
+        thigh_l: 0.4, shin_l: 0.3, thigh_r: -0.15, shin_r: 0.1, foot_r: 0.75,
+      }, { rootDelta: { x: 45, y: -22 }, phase: 'ACTIVE', hitActive: true, footPlant: 'none', weaponAngle: 1.9 }),
+      kf(0.76, {
+        hips: -0.2, spine: 0.15, chest: -0.3,
+        shoulder_l: 0.5, upperArm_l: -0.6, lowerArm_l: 0.9,
+        shoulder_r: -0.5, upperArm_r: 0.7, lowerArm_r: -0.7,
+        thigh_l: 0.35, shin_l: 0.35, thigh_r: -0.1, shin_r: 0.2, foot_r: 0.5,
+      }, { rootDelta: { x: 48, y: -10 }, phase: 'ACTIVE', hitActive: true, footPlant: 'none', weaponAngle: 2.4 }),
+      kf(1.0, {
+        shoulder_l: 0.15, upperArm_l: -0.35, lowerArm_l: 0.85,
+        shoulder_r: -0.12, upperArm_r: 0.4, lowerArm_r: -0.9,
+        thigh_l: 0.12, shin_l: 0.08, thigh_r: -0.08, shin_r: 0.05,
+      }, { rootDelta: { x: 0, y: 0 }, phase: 'RECOVERY', footPlant: 'both', weaponAngle: 0 }),
+    ],
     finisher: true,
   }),
 

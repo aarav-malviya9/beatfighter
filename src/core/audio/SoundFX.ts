@@ -18,6 +18,7 @@ export class SoundFX {
   private musicStep: number = 0;
   private bpm: number = 138;
   private analyzerNode: AnalyserNode | null = null;
+  private exportDestination: MediaStreamAudioDestinationNode | null = null;
 
   private constructor() {
     // Lazy initialize on first user gesture
@@ -55,6 +56,20 @@ export class SoundFX {
       this.ctx.resume();
     }
     return this.ctx;
+  }
+
+  public setExportDestination(dest: MediaStreamAudioDestinationNode | null): void {
+    if (this.exportDestination && this.masterGain) {
+      try { this.masterGain.disconnect(this.exportDestination); } catch { /* ignore */ }
+    }
+    this.exportDestination = dest;
+    if (this.masterGain && dest) {
+      this.masterGain.connect(dest);
+    }
+  }
+
+  public getMasterOutputNode(): AudioNode | null {
+    return this.masterGain;
   }
 
   public setMuted(muted: boolean): void {

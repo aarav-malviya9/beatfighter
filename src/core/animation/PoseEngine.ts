@@ -232,3 +232,106 @@ export function setJointAngle(pose: Pose, name: string, angle: number): Pose {
     joints: { ...pose.joints, [name]: { ...pose.joints[name], angle: clamped } },
   };
 }
+
+export interface MoveKeyframe {
+  time: number; // 0.0 to 1.0 (relative progress within move duration)
+  pose: Pose;
+  rootDelta?: { x: number; y: number }; // root trajectory offset
+  weaponAngle?: number; // radians offset
+  hitActive?: boolean;
+  phase?: 'STARTUP' | 'ACTIVE' | 'RECOVERY' | 'FINISH';
+  footPlant?: 'left' | 'right' | 'both' | 'none';
+}
+
+export function sampleClipPose(
+  keyframes: MoveKeyframe[],
+  progress: number,
+  fallbackPose: Pose,
+): {
+  pose: Pose;
+  weaponAngle: number;
+  hitActive: boolean;
+  phase: 'STARTUP' | 'ACTIVE' | 'RECOVERY' | 'FINISH';
+  footPlant: 'left' | 'right' | 'both' | 'none';
+} {
+  if (!keyframes || keyframes.length === 0) {
+    return {
+      pose: fallbackPose,
+      weaponAngle: 0,
+      hitActive: false,
+      phase: 'ACTIVE',
+      footPlant: 'both',
+    };
+  }
+
+  const p = Math.max(0, Math.min(1, progress));
+
+  if (p <= keyframes[0].time) {
+    const k = keyframes[0];
+    return {
+      pose: applyRootDelta(k.pose, k.rootDelta),
+      weaponAngle: k.weaponAngle ?? 0,
+      hitActive: !!k.hitActive,
+      phase: k.phase ?? 'STARTUP',
+      footPlant: k.footPlant ?? 'both',
+    };
+  }
+
+  if (p >= keyframes[keyframes.length - 1].time) {
+    const k = keyframes[keyframes.length - 1];
+    return {
+      pose: applyRootDelta(k.pose, k.rootDelta),
+      weaponAngle: k.weaponAngle ?? 0,
+      hitActive: !!k.hitActive,
+      phase: k.phase ?? 'RECOVERY',
+      footPlant: k.footPlant ?? 'both',
+    };
+  }
+
+  let k0 = keyframes[0];
+  let k1 = keyframes[1];
+  for (let i = 0; i < keyframes.length - 1; i++) {
+    if (p >= keyframes[i].time && p <= keyframes[i + 1].time) {
+      k0 = keyframes[i];
+      k1 = keyframes[i + 1];
+      break;
+    }
+  }
+
+  const span = Math.max(0.0001, k1.time - k0.time);
+  const localT = (p - k0.time) / span;
+
+  const basePose = interpolatePose(k0.pose, k1.pose, localT);
+
+  const rd0 = k0.rootDelta ?? { x: 0, y: 0 };
+  const rd1 = k1.rootDelta ?? { x: 0, y: 0 };
+  basePose.root.x += rd0.x + (rd1.x - rd0.x) * localT;
+  basePose.root.y += rd0.y + (rd1.y - rd0.y) * localT;
+
+  const wa0 = k0.weaponAngle ?? 0;
+  const wa1 = k1.weaponAngle ?? 0;
+  const weaponAngle = wa0 + (wa1 - wa0) * localT;
+
+  const hitActive = Boolean(k0.hitActive || k1.hitActive) && localT >= 0.1 && localT <= 0.9;
+  const phase = localT < 0.5 ? (k0.phase ?? 'STARTUP') : (k1.phase ?? 'ACTIVE');
+  const footPlant = localT < 0.5 ? (k0.footPlant ?? 'both') : (k1.footPlant ?? 'both');
+
+  return {
+    pose: basePose,
+    weaponAngle,
+    hitActive,
+    phase,
+    footPlant,
+  };
+}
+
+function applyRootDelta(pose: Pose, delta?: { x: number; y: number }): Pose {
+  if (!delta) return pose;
+  return {
+    ...pose,
+    root: {
+      x: pose.root.x + delta.x,
+      y: pose.root.y + delta.y,
+    },
+  };
+}

@@ -6,6 +6,7 @@ import { CanvasRenderer } from './core/rendering/CanvasRenderer';
 import { CombatDirector } from './core/choreography/CombatDirector';
 import { VideoExporter } from './core/export/VideoExporter';
 import { SoundFX } from './core/audio/SoundFX';
+import { SimulationClock } from './core/rendering/SimulationClock';
 import type { ArenaType } from './core/rendering/ArenaSystem';
 
 function App() {
@@ -94,6 +95,10 @@ function App() {
       if (dt > 0.06 || dt <= 0) dt = 0.016; // Smooth clamp so simulation never freezes
       lastPerfTime = timestamp;
 
+      // Shared simulation clock: handles hit-stop freezes and global slow-motion
+      const clock = SimulationClock.getInstance();
+      const { simDt, rawDt } = clock.update(dt);
+
       // Update frequency analysis
       if (engine.getCurrentTime() > 0 && engine.getBuffer()) {
         engine.getAnalyzerData(frequencyData.current);
@@ -112,10 +117,12 @@ function App() {
         director.onBeat(intensity);
       }
 
-      // Independent continuous physics & choreography update
+      // Independent continuous physics & choreography update:
+      // simDt drives fighter animation and combat (freezes on hit-stop, scales with slow-mo)
+      // rawDt drives camera shake and screen effects
       const curTime = engine.getCurrentTime();
-      director.update(dt, curTime);
-      renderer.update(dt, [f1, f2], intensity);
+      director.update(simDt, curTime);
+      renderer.update(rawDt, [f1, f2], intensity);
       renderer.render([f1, f2], intensity, frequencyData.current);
 
       requestRef.current = requestAnimationFrame(loop);
@@ -299,6 +306,7 @@ function App() {
       if (ctx && exporterRef.current) {
         const dest = ctx.createMediaStreamDestination();
         engine.setExportDestination(dest);
+        SoundFX.getInstance().setExportDestination(dest);
         exporterRef.current.setAudioStream(dest.stream);
       }
 
@@ -313,6 +321,8 @@ function App() {
     } else {
       exporterRef.current?.stopRecording();
       setIsExporting(false);
+      engine.setExportDestination(null);
+      SoundFX.getInstance().setExportDestination(null);
 
       if (canvasRef.current && rendererRef.current) {
         canvasRef.current.width = 1280;
@@ -448,9 +458,11 @@ function App() {
 
           <button
             onClick={handleSystemAudio}
-            className="bg-green-700 hover:bg-green-600 text-white px-3 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-1"
+            className="bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5"
+            title="Capture Shared Audio / System Audio (e.g. Spotify, YouTube, or browser tab)"
           >
-            Spotify
+            <span>🎙️</span>
+            Capture Audio
           </button>
 
           <label className="cursor-pointer bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors">

@@ -487,6 +487,99 @@ export class VFXEngine {
     });
   }
 
+  public emitMoveVFX(
+    vfx: {
+      type: 'slash' | 'burst' | 'shockwave' | 'arc' | 'energy' | 'launch' | 'slam' | 'spark';
+      color: string;
+      intensity: number;
+      radius?: number;
+    },
+    x: number,
+    y: number,
+    dir: 1 | -1,
+    damage: number = 0,
+  ): void {
+    const intensity = Math.min(1.5, Math.max(0.3, vfx.intensity * (1 + damage / 60)));
+    const col = vfx.color || '#ffffff';
+
+    switch (vfx.type) {
+      case 'slash': {
+        const angle = dir > 0 ? 0.2 : Math.PI - 0.2;
+        this.emitSlash(x, y, angle, col, intensity);
+        break;
+      }
+      case 'spark': {
+        this.spawnParticles(x, y, Math.floor(14 * intensity), {
+          kind: 'spark',
+          color: col,
+          size: 2.5 + intensity * 2,
+          speed: 240 * intensity + 60,
+          life: 0.18 + 0.1 * intensity,
+          gravity: 350,
+          drag: 0.1,
+          spread: Math.PI * 0.9,
+          angleBias: dir > 0 ? 0 : Math.PI,
+          stretch: 2.5,
+        });
+        break;
+      }
+      case 'arc': {
+        const x2 = x + dir * (60 + 40 * intensity);
+        const y2 = y + (Math.random() - 0.5) * 30;
+        this.emitArc(x, y, x2, y2, col, intensity);
+        this.emitSlash(x, y, dir > 0 ? 0.5 : Math.PI - 0.5, col, intensity * 0.8);
+        break;
+      }
+      case 'energy': {
+        this.emitEnergy(x, y, col, intensity);
+        this.emitShockwave(x, y, col, intensity * 0.7);
+        break;
+      }
+      case 'launch': {
+        this.emitShockwave(x, y + 10, col, intensity * 0.8);
+        this.spawnParticles(x, y, Math.floor(16 * intensity), {
+          kind: 'speedline',
+          color: col,
+          size: 2,
+          speed: 450 * intensity,
+          life: 0.22,
+          gravity: -200,
+          drag: 0.05,
+          spread: 0.5,
+          angleBias: -Math.PI / 2,
+          stretch: 12,
+        });
+        break;
+      }
+      case 'slam': {
+        this.emitShockwave(x, y, col, intensity * 1.3);
+        this.emitDust(x, y, Math.floor(25 * intensity), intensity);
+        this.spawnParticles(x, y - 5, Math.floor(16 * intensity), {
+          kind: 'spark',
+          color: '#ffffff',
+          size: 3,
+          speed: 320 * intensity,
+          life: 0.28,
+          gravity: 500,
+          drag: 0.08,
+          spread: Math.PI,
+          angleBias: -Math.PI / 2,
+          stretch: 3,
+        });
+        break;
+      }
+      case 'shockwave': {
+        this.emitShockwave(x, y, col, intensity);
+        break;
+      }
+      case 'burst':
+      default: {
+        this.emitHit(x, y, col, intensity);
+        break;
+      }
+    }
+  }
+
   public addAfterimage(
     x: number,
     y: number,

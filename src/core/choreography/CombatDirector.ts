@@ -8,8 +8,10 @@ import {
   type AttackLevel,
 } from '../animation/MoveLibrary';
 import { type TrackAnalysis } from '../audio/MusicAnalyzer';
+import { MusicSync } from '../audio/MusicSync';
 import { CameraDirector } from '../rendering/CameraDirector';
 import { SoundFX } from '../audio/SoundFX';
+import { SimulationClock } from '../rendering/SimulationClock';
 import type { CanvasRenderer } from '../rendering/CanvasRenderer';
 
 export {
@@ -100,9 +102,11 @@ export class CombatDirector {
   private cooldowns: [number, number] = [0, 0];
   private prng: PRNG = new PRNG(12345);
 
-  // Track timeline
+  // Track timeline & seek tracking
   private trackAnalysis: TrackAnalysis | null = null;
+  private musicSync: MusicSync = new MusicSync();
   private currentBeatIndex = 0;
+  private lastKnownTime = -1;
 
   // External delegates
   public onHit: (x: number, y: number, color: string, damage: number) => void;
@@ -159,7 +163,9 @@ export class CombatDirector {
     seedString: string = 'beatfighter'
   ): void {
     this.trackAnalysis = analysis;
+    this.musicSync.setTrackAnalysis(analysis);
     this.currentBeatIndex = 0;
+    this.lastKnownTime = -1;
 
     let seed = 0;
     for (let i = 0; i < seedString.length; i++) {
@@ -723,10 +729,8 @@ export class CombatDirector {
   // ---------------------------------------------------------------------------
 
   public update(dt: number, currentTime: number): void {
-    if (dt > 1.0 || dt < 0) {
-      this.fighters.forEach((f) => f.performMove('IDLE'));
-      dt = 0;
-
+    // Seek detection: if playback leaped forward or backward by > 0.35s
+    if (this.lastKnownTime >= 0 && Math.abs(currentTime - this.lastKnownTime) > 0.35) {
       if (this.trackAnalysis) {
         this.currentBeatIndex = this.trackAnalysis.beats.findIndex(
           (b) => b >= currentTime
@@ -735,22 +739,26 @@ export class CombatDirector {
           this.currentBeatIndex = this.trackAnalysis.beats.length;
         }
       }
+      this.activeCombo = null;
+      this.activeSignature = null;
+      this.combatState = 'NEUTRAL';
+    }
+    this.lastKnownTime = currentTime;
+
+    if (dt > 1.0 || dt < 0) {
+      this.fighters.forEach((f) => f.performMove('IDLE'));
+      dt = 0;
     }
 
     this.totalFightTime += dt;
 
-    // Process pre-calculated audio track beats
+    // Process pre-calculated audio track beats via seek-safe MusicSync
     if (this.trackAnalysis) {
-      while (
+      if (
         this.currentBeatIndex < this.trackAnalysis.beats.length &&
         this.trackAnalysis.beats[this.currentBeatIndex] <= currentTime
       ) {
-        const energyIdx = Math.floor(currentTime * 100);
-        const intensity =
-          this.trackAnalysis.energyCurve[energyIdx] !== undefined
-            ? this.trackAnalysis.energyCurve[energyIdx] * 255
-            : 100;
-
+        const intensity = this.musicSync.getIntensityAt(currentTime) * 255;
         this.onBeat(intensity);
         this.currentBeatIndex++;
       }
@@ -856,6 +864,17 @@ export class CombatDirector {
       const dmg = currentMove.damage;
       const vfxIntensity = Math.min(1.0, Math.max(0.2, dmg / 45));
 
+      // Synchronize Hit-stop & Slow-Motion across simulation
+      if (currentMove.finisher || dmg >= 35) {
+        SimulationClock.getInstance().triggerHitstop(0.12);
+        SimulationClock.getInstance().requestSlowMo(0.25, 0.45);
+      } else if (dmg >= 20) {
+        SimulationClock.getInstance().triggerHitstop(0.05);
+        SimulationClock.getInstance().requestSlowMo(0.65, 0.2);
+      } else if (dmg >= 8) {
+        SimulationClock.getInstance().triggerHitstop(0.025);
+      }
+
       // Sound FX
       SoundFX.getInstance().playHit(dmg >= 24);
       SoundFX.getInstance().playBladeSlash();
@@ -904,6 +923,10 @@ export class CombatDirector {
     hitX: number,
     hitY: number
   ): void {
+    // Hitstop & slow-mo on precision parry
+    SimulationClock.getInstance().triggerHitstop(0.08);
+    SimulationClock.getInstance().requestSlowMo(0.35, 0.25);
+
     // Metallic sword clash ring
     SoundFX.getInstance().playBladeClash(1.35);
 
@@ -995,6 +1018,22 @@ export class CombatDirector {
     // Trigger Move Camera requests if specified
     if (move.camera && this.camera) {
       this.camera.requestCamera(move.camera);
+    }
+
+    // Connect MoveLibrary VFX configuration to VFXEngine
+    if (move.vfx && this.renderer) {
+      const originName = move.vfx.origin ?? move.hitOrigin ?? 'hand_r';
+      const joint = fighter.getJointWorld(originName) ?? {
+        x: fighter.x + 25 * fighter.direction,
+        y: fighter.y - 70,
+      };
+      this.renderer.vfx.emitMoveVFX(
+        move.vfx,
+        joint.x,
+        joint.y,
+        fighter.direction,
+        move.damage
+      );
     }
   }
 

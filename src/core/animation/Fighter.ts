@@ -1,6 +1,7 @@
 import {
   createDefaultPose,
   interpolatePose,
+  sampleClipPose,
   solveForwardKinematics,
   getJointWorldPos,
   DEFAULT_SKELETON,
@@ -219,6 +220,7 @@ export class Fighter {
 
   // Joint history for motion blur
   private prevJointPositions: Record<string, Point> = {};
+  private currentWeaponAngleOffset: number = 0;
 
   constructor(
     x: number,
@@ -352,31 +354,60 @@ export class Fighter {
 
     const { startup, active, recovery, total, forwardMovement } =
       this.currentMove;
-    const moveTime = this.actionTime;
-
-    // Forward movement during startup + active
     const moveWindow = startup + active;
-    if (moveTime <= moveWindow && moveWindow > 0) {
-      this.x += (forwardMovement / moveWindow) * dt * this.direction;
-    }
 
-    if (moveTime < startup) {
-      this.currentPhase = 'STARTUP';
-      this.isHitActive = false;
-      const t = startup > 0 ? moveTime / startup : 1;
-      this.currentPose = interpolatePose(this.fromPose, this.targetPose, t);
-    } else if (moveTime < startup + active) {
-      this.currentPhase = 'ACTIVE';
-      this.isHitActive = this.currentMove.damage > 0;
-      this.currentPose = clonePose(this.targetPose);
-    } else if (moveTime < total) {
-      this.currentPhase = 'RECOVERY';
-      this.isHitActive = false;
-      const recElapsed = moveTime - startup - active;
-      const t = recovery > 0 ? recElapsed / recovery : 1;
-      this.currentPose = interpolatePose(this.targetPose, IDLE_POSE, t);
+    if (this.currentMove.keyframes && this.currentMove.keyframes.length > 0) {
+      const progress = Math.min(1.0, Math.max(0, this.actionTime / Math.max(0.001, total)));
+      const sample = sampleClipPose(this.currentMove.keyframes, progress, this.targetPose);
+
+      this.currentPose = sample.pose;
+      this.currentPhase = sample.phase;
+      this.isHitActive = sample.hitActive && this.currentMove.damage > 0;
+      this.currentWeaponAngleOffset = sample.weaponAngle;
+
+      // Forward movement follows action window
+      if (this.actionTime <= moveWindow && moveWindow > 0) {
+        this.x += (forwardMovement / moveWindow) * dt * this.direction;
+      }
+
+      // Foot plant constraint
+      if (sample.footPlant === 'both' || sample.footPlant === 'left' || sample.footPlant === 'right') {
+        if (this.y >= this.groundY - 1) {
+          this.y = this.groundY;
+          this.velocityY = 0;
+        }
+      }
+
+      if (this.actionTime >= total) {
+        this.currentWeaponAngleOffset = 0;
+        this.returnToIdle();
+      }
     } else {
-      this.returnToIdle();
+      const moveTime = this.actionTime;
+      // Forward movement during startup + active
+      if (moveTime <= moveWindow && moveWindow > 0) {
+        this.x += (forwardMovement / moveWindow) * dt * this.direction;
+      }
+
+      if (moveTime < startup) {
+        this.currentPhase = 'STARTUP';
+        this.isHitActive = false;
+        const t = startup > 0 ? moveTime / startup : 1;
+        this.currentPose = interpolatePose(this.fromPose, this.targetPose, t);
+      } else if (moveTime < startup + active) {
+        this.currentPhase = 'ACTIVE';
+        this.isHitActive = this.currentMove.damage > 0;
+        this.currentPose = clonePose(this.targetPose);
+      } else if (moveTime < total) {
+        this.currentPhase = 'RECOVERY';
+        this.isHitActive = false;
+        const recElapsed = moveTime - startup - active;
+        const t = recovery > 0 ? recElapsed / recovery : 1;
+        this.currentPose = interpolatePose(this.targetPose, IDLE_POSE, t);
+      } else {
+        this.currentWeaponAngleOffset = 0;
+        this.returnToIdle();
+      }
     }
 
     // Impact detection: when hit active first turns true
@@ -652,10 +683,13 @@ export class Fighter {
             const ay = this.y + armPos.y;
             const dx = tipWorldX - ax;
             const dy = tipWorldY - ay;
-            const len = Math.hypot(dx, dy) || 1;
+            const baseAngle = Math.atan2(dy, dx);
+            const isLeft = trailJoint === 'hand_l';
+            const offset = (isLeft ? -Math.PI * 0.75 : 0.15 * this.direction) + this.currentWeaponAngleOffset * this.direction;
+            const bladeAngle = baseAngle + offset;
             const bladeLen = this.weapon === 'scythe' ? 95 : this.weapon === 'katana' ? 75 : 55;
-            bladeTipX = tipWorldX + (dx / len) * bladeLen;
-            bladeTipY = tipWorldY + (dy / len) * bladeLen;
+            bladeTipX = tipWorldX + Math.cos(bladeAngle) * bladeLen;
+            bladeTipY = tipWorldY + Math.sin(bladeAngle) * bladeLen;
             bladeBaseX = tipWorldX;
             bladeBaseY = tipWorldY;
           }
@@ -1799,7 +1833,9 @@ export class Fighter {
     const dx = hand.x - arm.x;
     const dy = hand.y - arm.y;
     const baseAngle = Math.atan2(dy, dx);
-    const bladeAngle = isLeft ? baseAngle - Math.PI * 0.75 : baseAngle + 0.15 * this.direction;
+    const bladeAngle =
+      (isLeft ? baseAngle - Math.PI * 0.75 : baseAngle + 0.15 * this.direction) +
+      this.currentWeaponAngleOffset * this.direction;
 
     ctx.save();
     ctx.translate(hand.x, hand.y);
@@ -1876,10 +1912,14 @@ export class Fighter {
     const dx = hand.x - arm.x;
     const dy = hand.y - arm.y;
     const baseAngle = Math.atan2(dy, dx);
+    const scytheAngle =
+      baseAngle +
+      0.3 * this.direction +
+      this.currentWeaponAngleOffset * this.direction;
 
     ctx.save();
     ctx.translate(hand.x, hand.y);
-    ctx.rotate(baseAngle + 0.3 * this.direction);
+    ctx.rotate(scytheAngle);
 
     // Shaft (Long Pole)
     const shaftLen = 110;
